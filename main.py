@@ -217,3 +217,9 @@ if __name__ == "__main__":
     
     scan_solana_ultra_strict_radar()
 bot.infinity_polling()
+# هذا السطر يوضع في نهاية الخوارزمية ليطلق التنبيه فوراً عند تشغيل السيرفر
+try:
+    message = "⚠️ عاجل: أنا في حالة نشاط واترصد الفرص الآن على شبكة Solana، فلا تقلق أنا نشط!"
+    send_radar_alert(message)
+except Exception as e:
+    print(f"فشل إرسال رسالة النشاط: {e}")
