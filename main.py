@@ -216,3 +216,4 @@ if __name__ == "__main__":
     cleanup_thread.start()
     
     scan_solana_ultra_strict_radar()
+bot.infinity_polling()
