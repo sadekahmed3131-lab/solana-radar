@@ -214,8 +214,6 @@ if __name__ == "__main__":
     
     cleanup_thread = threading.Thread(target=auto_cleanup_and_peak_reporter_loop, daemon=True)
     cleanup_thread.start()
-   import threading
-threading.Thread(target=bot.infinity_polling).start()
-
+    import threading
+    threading.Thread(target=bot.infinity_polling).start()
 send_radar_alert("⚠️ عاجل: أنا في حالة نشاط واترصد الفرص الآن، فلا تقلق!")
- 
