@@ -215,11 +215,9 @@ if __name__ == "__main__":
     cleanup_thread = threading.Thread(target=auto_cleanup_and_peak_reporter_loop, daemon=True)
     cleanup_thread.start()
     
-    scan_solana_ultra_strict_radar()
-bot.infinity_polling()
-# هذا السطر يوضع في نهاية الخوارزمية ليطلق التنبيه فوراً عند تشغيل السيرفر
-try:
-    message = "⚠️ عاجل: أنا في حالة نشاط واترصد الفرص الآن على شبكة Solana، فلا تقلق أنا نشط!"
-    send_radar_alert(message)
-except Exception as e:
-    print(f"فشل إرسال رسالة النشاط: {e}")
+    scan_solana_ultra_strict_radar)
+import threading
+threading.Thread(target=bot.infinity_polling).start()
+
+send_radar_alert("⚠️ عاجل: أنا في حالة نشاط واترصد الفرص الآن، فلا تقلق!")
+
