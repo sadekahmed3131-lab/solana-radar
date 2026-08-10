@@ -49,7 +49,7 @@ def safe_send_telegram(chat_id, text, markup=None, is_status=False):
             if is_status:
                 pinned_status_id = msg.message_id
             return msg.message_id
-        print(f"(🚨) خطأ في إرسال تليجرام: {e}")
+        print(f"❌ خطأ في إرسال التليجرام: {e}")
         return None
 
 def safe_delete_message(chat_id, message_id):
@@ -67,7 +67,7 @@ def manage_heartbeat_status(action="show"):
         safe_delete_message(CHAT_ID, pinned_status_id)
         pinned_status_id = None
     elif action == "show" and not pinned_status_id:
-        status_text = "📢 *رادار سولانا الخارق:* أنا في حالة نشاط قصوى وأمسح السوق الآن! 🛡️"
+        status_text = "📡 *رادار سولانا الخارق*: أنا في حالة نشاط قصوى وأمسح السوق الآن! ⚡"
         safe_send_telegram(CHAT_ID, status_text, is_status=True)
 
 # ==========================================
@@ -80,7 +80,7 @@ def scan_solana_ultra_strict_radar():
     print("==> Solana Radar Started Successfully!")
     
     while CHAT_ID is None or "DummyToken" in TELEGRAM_TOKEN:
-        print("⚠️ السيرفر مستقر، وبانتظار كتابة TELEGRAM_TOKEN و CHAT_ID في لوحة إعدادات Render...")
+        print("...في لوحة إعدادات Render السيرفر مستمر بانتظار كتابة TELEGRAM_TOKEN و CHAT_ID")
         time.sleep(10)
         
     manage_heartbeat_status("show")
@@ -114,6 +114,7 @@ def scan_solana_ultra_strict_radar():
                     buys = token.get('buys', 0)
                     sells = token.get('sells', 0)
                     total_tx = buys + sells
+                    
                     buy_ratio = (buys / total_tx) * 100 if total_tx > 0 else 0
                     
                     created_timestamp = token.get('created_timestamp') or token.get('createdAt', 0)
@@ -128,19 +129,19 @@ def scan_solana_ultra_strict_radar():
                         symbol = token.get('symbol', 'MEME')
                         
                         message = (
-                            f"🚀 *تنبيه ماسي: رصد عملة فائقة الانفجار!* 🚀\n\n"
-                            f"🌐 *المنصة:* {platform_name}\n"
-                            f"🏷️ *الاسم:* {name} ({symbol})\n"
-                            f"📍 *العنوان الذكي (اضغط للنسخ):* `{mint}`\n\n"
-                            f"📊 *تحليل صقر الجودة:* \n"
-                            f"⬅️ الشراء: {buys} صفقة بنسبة صعود قدرها ({buy_ratio:.1f}%). زخم حقيقي قوي عمودياً! 🔥\n"
-                            f"⬅️ الأمان البرمجي: العقد نظيف وخيار التجميد ملغي ✅\n"
-                            f"⬅️ عمق السيولة: متناسق، والبيع اليدوي الآمن مضمون هندسياً 📈\n"
-                            f"⬅️ التوصية: انسخ العنوان في الأعلى وافتح منصتك للتداول فوراً! ⚡"
+                            f"🔥 *تنبيه ماسي: رصد عملة فائقة الانفجار!* 🔥\n\n"
+                            f"🌐 *المنصة:* `{platform_name}`\n"
+                            f"📝 *الاسم:* {name} ({symbol})\n"
+                            f"🔑 *العنوان الذكي (اضغط للنسخ):* `{mint}`\n"
+                            f"📊 *تحليل سعر الجودة:* ✨\n"
+                            f"📈 *الشراء (buys):* صفقة بنسبة صعود قدرها ({buy_ratio:.1f}%) | إجمالي المعاملات ({total_tx})\n"
+                            f"💎 *الأمان البرمجي:* العقد نظيف وخيار التجميد ملغي ✅\n"
+                            f"🚀 *عمق السيولة:* متناسق، والبيع اليدوي الآمن مضمون خدمياً 💸\n"
+                            f"🔗 *التوصية:* انسخ العنوان في الأعلى وافتح منصتك للتداول فوراً ✨"
                         )
                         
                         markup = types.InlineKeyboardMarkup()
-                        btn_open = types.InlineKeyboardButton("🌐 فتح صفحة العملة", url=f"https://pump.fun{mint}")
+                        btn_open = types.InlineKeyboardButton("↗️ فتح صفحة العملة", url=f"https://pump.fun{mint}")
                         markup.add(btn_open)
                         
                         msg_id = safe_send_telegram(CHAT_ID, message, markup)
@@ -156,7 +157,7 @@ def scan_solana_ultra_strict_radar():
                         break
                         
             except Exception as e:
-                print(f"(🚨) خطأ في جلب البيانات: {e}")
+                print(f"❌ خطأ في جلب البيانات: {e}")
                 time.sleep(3)
                 
         time.sleep(2)
@@ -185,15 +186,15 @@ def auto_cleanup_and_peak_reporter_loop():
             peak_count = hourly_activity[peak_hour]
             
             report_msg = (
-                f"📊 *تقرير الذروة والتحليل الإستراتيجي اليومي*\n"
-                f"🔥 الخلاصة الحالية لتداول الـ 24 ساعة الماضية\n"
-                f"⏰ ساعة الذروة: {peak_hour}:00\n"
-                f"🚀 عدد العملات المكتشفة in هذه الساعة: {peak_count}"
+                f"📊 *تقرير الذروة والتحليل الإستراتيجي اليومي* 📊\n"
+                f"⏰ *المقاصة الحالية لتداول الـ 24 ساعة الماضية:* 🕒\n"
+                f"🔥 *ساعة الذروة:* `{peak_hour}:00`\n"
+                f"📈 *عدد العملات المكتشفة في هذه الساعة:* {peak_count} 🚀"
             )
             safe_send_telegram(CHAT_ID, report_msg)
 
 # ==========================================
-# 5. خادم الويب الأساسي لخدمة Render
+# 5. خادم الويب الأساسي لمنصة Render
 # ==========================================
 class WebServerHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -214,6 +215,18 @@ if __name__ == "__main__":
     
     cleanup_thread = threading.Thread(target=auto_cleanup_and_peak_reporter_loop, daemon=True)
     cleanup_thread.start()
-    import threading
-    threading.Thread(target=bot.infinity_polling).start()
-send_radar_alert("⚠️ عاجل: أنا في حالة نشاط واترصد الفرص الآن، فلا تقلق!")
+    
+    # تشغيل الرادار والاستماع في الخلفية بشكل حي ومنظم دون تجميد
+    radar_thread = threading.Thread(target=scan_solana_ultra_strict_radar, daemon=True)
+    radar_thread.start()
+    
+    # إرسال رسالة التنبيه الفورية المطمئنة لتلغرام عند بدء تشغيل السيرفر
+    def send_initial_alert():
+        time.sleep(5)  # الانتظار قليلاً للتأكد من استقرار اتصال السيرفر
+        safe_send_telegram(CHAT_ID, "⚠️ عاجل: أنا في حالة نشاط واترصد الفرص الآن، فلا تقلق أنا نشط!")
+        
+    alert_thread = threading.Thread(target=send_initial_alert, daemon=True)
+    alert_thread.start()
+    
+    # إبقاء الكود الرئيسي حياً للاستماع للمحادثة
+    bot.infinity_polling()
