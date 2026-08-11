@@ -31,7 +31,6 @@ daily_stats = {
 
 # 2. نظام التوقيت الحديث المتوافق مع السيرفرات السحابية (UTC Aware)
 def get_local_time():
-    # توقيت الجزائر وتونس (GMT+1) متوافق سحابياً
     return datetime.datetime.now(datetime.timezone.utc) + timedelta(hours=1)
 
 def record_peak_stat(is_diamond=False):
@@ -82,7 +81,6 @@ async def send_24h_peak_report():
 async def fetch_mint_data_live(signature, session):
     try:
         import random
-        # قنص التوكن فوراً لضمان ميزة السرعة القصوى على شبكة سولانا
         mint_address = f"MINT_{signature[:6]}...pump"
         mock_liquidity = random.randint(15000, 85000)
         return {"mint": mint_address, "liquidity": mock_liquidity, "is_safe": True}
@@ -95,7 +93,6 @@ async def live_bourse_timer_and_guard(message_id, mint_address, initial_liquidit
     
     dex_api_url = f"https://dexscreener.com{mint_address}"
     
-    # استخدام جلسة اتصال موحدة لحماية السيرفر من الحظر (Rate Limit Protection)
     async with aiohttp.ClientSession() as session:
         for second in range(100):
             await asyncio.sleep(3)
@@ -117,7 +114,6 @@ async def live_bourse_timer_and_guard(message_id, mint_address, initial_liquidit
             except Exception as e:
                 print(f"(!) تنبيه: عطل مؤقت في الاتصال بالبورصة العالمية: {e}")
                 
-            # القانون الصارم: حالة الانهيار أو سحب السيولة الفجائي
             if price_change_5m <= -25.0:
                 alert_text = (
                     f"🚨 **تنبيه عاجل: خطر سحب السيولة المحتمل** 🚨\n"
@@ -132,7 +128,6 @@ async def live_bourse_timer_and_guard(message_id, mint_address, initial_liquidit
                     pass
                 break
                 
-            # القانون الصارم: حالة الانفجار السعري وتطور العملة الماسية
             elif price_change_5m >= 50.0:
                 record_peak_stat(is_diamond=True)
                 alert_text = (
@@ -152,7 +147,6 @@ async def live_bourse_timer_and_guard(message_id, mint_address, initial_liquidit
                     pass
                 return
                 
-            # حالة التحديث الدوري المستمر (مصفاة ونظيفة من علامات الهروب)
             else:
                 color = "🟢" if price_change_5m >= 0 else "🔴"
                 time_left = 300 - (second * 3)
@@ -197,29 +191,31 @@ def handle_radar_buttons(call):
         except Exception:
             pass
 
-# 7. محرك الإقلاع الرئيسي (لمنع الخروج المبكر وإرسال رسالة الطمأنينة الفورية لهاتفك)
-if __name__ == "__main__":
-    print("🚀 جاري إقلاع محرك رادار سولانا...")
+# 7. دالة التشغيل الآمنة والمحمية من أخطاء الـ Event Loop
+async def main_runner():
+    print("🚀 جاري إقلاع محرك رادار سولانا الخالص...")
     
-    # رسالة الطمأنينة والنشاط التي ستصلك على التليجرام فور تشغيل السيرفر بنجاح
     startup_message = (
         "🟢 **تنبيه الإقلاع: رادار سولانا الخارق يعمل الآن!**\n\n"
         "الخوارزمية مصفاة ومقننة وجاهزة للصيد بنسبة 100%.\n"
         "📡 **حالة الرادار:** في حالة رصد دائم ونشاط كامل للحركة والسيولة الآن...\n"
-        "❤️ **فلا تقلق أبداً، مشروعك المبارك في أيدٍ أمينة وبدأ العمل الحقيقي!**"
+        "❤️ **فلا تقلق أبداً، مشروعك المبارك مستقر وبدأ العمل الحقيقي بنجاح!**"
     )
     
     try:
-        # إرسال رسالة التأكيد والربط الناجح إلى تليجرام فوراً لإشعارك بالتشغيل
+        # إرسال رسالة التأكيد والربط الناجح
         bot.send_message(CHAT_ID, startup_message, parse_mode="Markdown")
-        print("✅ تم إرسال رسالة الطمأنينة الفورية إلى التليجرام بنجاح.")
+        print("✅ تم إرسال رسالة الطمأنينة الفورية بنجاح.")
         
-        # تفعيل حلقة التقارير اللامتزامنة في الخلفية
-        loop = asyncio.get_event_loop()
-        loop.create_task(send_24h_peak_report())
+        # إطلاق حلقة التقارير بأمان تام داخل المحيط اللامتزامن
+        asyncio.create_task(send_24h_peak_report())
         
-        # حلقة التثبيت اللانهائية (تمنع السيرفر من التعطل وتجعله يعمل للأبد)
-        bot.infinity_polling(skip_pending=True)
+        # تشغيل الاستماع اللانهائي للبوت بشكل منفصل لمنع تجميد المجلد الرئيسي
+        await asyncio.to_thread(bot.infinity_polling, skip_pending=True)
         
-    except KeyboardInterrupt:
-        print("🛑 تم إيقاف الرادار يدوياً.")
+    except Exception as e:
+        print(f"❌ حدث خطأ أثناء تشغيل المحرك: {e}")
+
+if __name__ == "__main__":
+    # تشغيل التطبيق بالأسلوب الحديث المتوافق مع بايثون 3.14 وسيرفر Render
+    asyncio.run(main_runner())
