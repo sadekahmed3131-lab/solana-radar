@@ -1,13 +1,12 @@
 import os
-import re
 import json
 import time
 import asyncio
 import logging
+import threading
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Any
+from datetime import datetime, timezone
 
 import aiohttp
 import websockets
@@ -16,20 +15,9 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 # ============================================================
-# SOLANA RADAR — FINAL EXPERIMENTAL BUILD
-# ============================================================
-# Gold / Diamond / Whale Support / Live Guardian / Telegram
-# 24/7 background monitoring
-#
-# IMPORTANT:
-# This version is a monitoring/research system.
-# It does NOT execute buy/sell orders.
-# Start with SHADOW_MODE=true.
-# ============================================================
-
-
-# ============================================================
-# 1. CONFIGURATION
+# SOLANA RADAR
+# Gold / Diamond / Whale Support / Live Guardian
+# Monitoring only - NO automatic trading
 # ============================================================
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -45,51 +33,19 @@ SOLANA_WS_URL = os.environ.get(
     "wss://api.mainnet-beta.solana.com"
 ).strip()
 
-RAYDIUM_PROGRAM_IDS = [
-    x.strip()
-    for x in os.environ.get(
-        "RAYDIUM_PROGRAM_IDS",
-        "675k1v2wPyEaAC6fGgFiTMvU5khRfw731gCxnhcnKC7m"
-    ).split(",")
-    if x.strip()
-]
+RAYDIUM_PROGRAM_ID = os.environ.get(
+    "RAYDIUM_PROGRAM_ID",
+    "675k1v2wPyEaAC6fGgFiTMvU5khRfw731gCxnhcnKC7m"
+).strip()
 
-DEX_TOKEN_URL = "https://api.dexscreener.com/latest/dex/tokens/{}"
+DEX_API = "https://api.dexscreener.com/latest/dex/tokens/{}"
 
-SHADOW_MODE = os.environ.get(
-    "SHADOW_MODE",
-    "true"
-).lower() == "true"
-
-MAX_CANDIDATES = int(
-    os.environ.get("MAX_CANDIDATES", "500")
-)
-
-SIEVE_WINDOW_SECONDS = int(
-    os.environ.get("SIEVE_WINDOW_SECONDS", "120")
-)
-
-MAX_GOLD_TO_SHOW = int(
-    os.environ.get("MAX_GOLD_TO_SHOW", "1")
-)
-
-GUARDIAN_SECONDS = int(
-    os.environ.get("GUARDIAN_SECONDS", "5")
-)
-
-DEX_TIMEOUT = 8
-RPC_TIMEOUT = 10
-
-MIN_LIQUIDITY_USD = float(
+MIN_LIQUIDITY = float(
     os.environ.get("MIN_LIQUIDITY_USD", "15000")
 )
 
-MIN_VOLUME_5M_USD = float(
+MIN_VOLUME_5M = float(
     os.environ.get("MIN_VOLUME_5M_USD", "2500")
-)
-
-MIN_TXNS_5M = int(
-    os.environ.get("MIN_TXNS_5M", "8")
 )
 
 MIN_GOLD_SCORE = float(
@@ -100,9 +56,13 @@ MIN_DIAMOND_SCORE = float(
     os.environ.get("MIN_DIAMOND_SCORE", "88")
 )
 
+GUARDIAN_INTERVAL = int(
+    os.environ.get("GUARDIAN_INTERVAL", "5")
+)
+
 
 # ============================================================
-# 2. LOGGING
+# LOGGING
 # ============================================================
 
 logging.basicConfig(
@@ -110,22 +70,27 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 
-log = logging.getLogger("solana-radar")
+logger = logging.getLogger("SOLANA_RADAR")
 
 
 # ============================================================
-# 3. TELEGRAM
+# VALIDATION
 # ============================================================
 
 if not BOT_TOKEN:
     raise RuntimeError(
-        "Missing TELEGRAM_BOT_TOKEN"
+        "TELEGRAM_BOT_TOKEN is missing"
     )
 
 if not CHAT_ID:
     raise RuntimeError(
-        "Missing CHAT_ID"
+        "CHAT_ID is missing"
     )
+
+
+# ============================================================
+# TELEGRAM BOT
+# ============================================================
 
 bot = telebot.TeleBot(
     BOT_TOKEN,
@@ -134,7 +99,7 @@ bot = telebot.TeleBot(
 
 
 # ============================================================
-# 4. GLOBAL STATE
+# GLOBAL STATE
 # ============================================================
 
 radar_active = True
@@ -142,36 +107,31 @@ radar_active = True
 position_active = False
 position_mint = None
 position_entry_price = None
-position_started_at = None
 position_message_id = None
 
-main_loop = None
+event_loop = None
 http_session = None
 
 seen_signatures = set()
 seen_mints = set()
 
-candidate_by_mint = {}
+candidates = {}
 
-event_history = deque(
-    maxlen=5000
-)
-
-hourly_stats = [0] * 24
+event_history = deque(maxlen=5000)
 
 daily_stats = {
-    "scanned_events": 0,
+    "events": 0,
     "gold": 0,
     "diamond": 0,
     "danger": 0,
-    "last_reset": datetime.now(
-        timezone.utc
-    ).date()
+    "last_date": datetime.now(timezone.utc).date()
 }
+
+hourly_activity = [0] * 24
 
 
 # ============================================================
-# 5. DATA STRUCTURES
+# DATA MODEL
 # ============================================================
 
 @dataclass
@@ -183,29 +143,23 @@ class TokenSnapshot:
 
     name: str = "Unknown"
 
-    price_usd: Optional[float] = None
+    price: float = 0.0
 
-    liquidity_usd: float = 0.0
+    liquidity: float = 0.0
 
-    volume_5m_usd: float = 0.0
+    volume_5m: float = 0.0
 
     buys_5m: int = 0
 
     sells_5m: int = 0
 
-    txns_5m: int = 0
-
     price_change_5m: float = 0.0
-
-    fdv: float = 0.0
 
     pair_address: str = ""
 
     dex_id: str = ""
 
     url: str = ""
-
-    age_minutes: Optional[float] = None
 
     raw: dict = field(
         default_factory=dict
@@ -217,162 +171,115 @@ class Candidate:
 
     snapshot: TokenSnapshot
 
-    score: float
-
     security_score: float
 
     market_score: float
 
     behavior_score: float
 
-    red_flags: list[str]
+    final_score: float
 
-    evidence: list[str]
+    whale_score: float
 
-    status: str = "CANDIDATE"
+    status: str
 
-    first_seen: datetime = field(
-        default_factory=lambda:
-        datetime.now(timezone.utc)
+    evidence: list = field(
+        default_factory=list
     )
 
-    whale_score: float = 0.0
+    warnings: list = field(
+        default_factory=list
+    )
 
-    diamond_score: float = 0.0
+    created_at: float = field(
+        default_factory=time.time
+    )
 
 
 # ============================================================
-# 6. TIME / FORMAT FUNCTIONS
+# TIME
 # ============================================================
 
 def utc_now():
-
     return datetime.now(
         timezone.utc
     )
 
 
-def local_hour():
-
-    return (
-        utc_now()
-        + timedelta(hours=1)
-    ).hour
+def current_hour():
+    return utc_now().hour
 
 
-def short_mint(mint):
-
-    if len(mint) > 14:
-
-        return (
-            f"{mint[:6]}..."
-            f"{mint[-6:]}"
-        )
-
-    return mint
-
-
-def fmt_money(value):
-
-    if value is None:
-
-        return "غير متاح"
-
-    if value >= 1_000_000:
-
-        return (
-            f"${value / 1_000_000:.2f}M"
-        )
-
-    if value >= 1_000:
-
-        return (
-            f"${value / 1_000:.1f}K"
-        )
-
-    if value >= 1:
-
-        return (
-            f"${value:.4f}"
-        )
-
-    return (
-        f"${value:.8f}"
-    )
-
-
-def fmt_pct(value):
-
-    return f"{value:+.2f}%"
-
-
-# ============================================================
-# 7. EVENT RECORDING
-# ============================================================
-
-def record_event(
-    kind,
-    mint=None,
-    extra=None
-):
-
-    now = utc_now()
-
-    hour = local_hour()
-
-    hourly_stats[hour] += 1
-
-    event_history.append({
-
-        "time": now.isoformat(),
-
-        "kind": kind,
-
-        "mint": mint,
-
-        "extra": extra or {}
-
-    })
-
-
-def reset_daily_if_needed():
+def reset_daily_stats():
 
     today = utc_now().date()
 
-    if today != daily_stats["last_reset"]:
+    if today != daily_stats["last_date"]:
 
-        daily_stats[
-            "scanned_events"
-        ] = 0
-
-        daily_stats[
-            "gold"
-        ] = 0
-
-        daily_stats[
-            "diamond"
-        ] = 0
-
-        daily_stats[
-            "danger"
-        ] = 0
-
-        daily_stats[
-            "last_reset"
-        ] = today
+        daily_stats["events"] = 0
+        daily_stats["gold"] = 0
+        daily_stats["diamond"] = 0
+        daily_stats["danger"] = 0
 
         for i in range(24):
+            hourly_activity[i] = 0
 
-            hourly_stats[i] = 0
+        daily_stats["last_date"] = today
 
 
 # ============================================================
-# 8. TELEGRAM HELPERS
+# FORMATTERS
 # ============================================================
 
-async def tg_send(
+def money(value):
+
+    try:
+        value = float(value)
+    except Exception:
+        return "$0"
+
+    if value >= 1_000_000:
+        return f"${value / 1_000_000:.2f}M"
+
+    if value >= 1_000:
+        return f"${value / 1_000:.1f}K"
+
+    if value >= 1:
+        return f"${value:.4f}"
+
+    return f"${value:.8f}"
+
+
+def percent(value):
+
+    try:
+        return f"{float(value):+.2f}%"
+    except Exception:
+        return "0.00%"
+
+
+def short_address(address):
+
+    if not address:
+        return "غير معروف"
+
+    if len(address) <= 14:
+        return address
+
+    return (
+        address[:7]
+        + "..."
+        + address[-7:]
+    )
+
+
+# ============================================================
+# TELEGRAM HELPERS
+# ============================================================
+
+async def send_message(
     text,
-    **kwargs
+    reply_markup=None
 ):
 
     try:
@@ -381,52 +288,51 @@ async def tg_send(
             bot.send_message,
             CHAT_ID,
             text,
-            **kwargs
+            reply_markup=reply_markup,
+            disable_web_page_preview=True
         )
 
     except Exception as exc:
 
-        log.warning(
-            "Telegram error: %s",
+        logger.warning(
+            "Telegram send error: %s",
             exc
         )
 
+        return None
 
-async def tg_edit(
+
+async def edit_message(
     message_id,
     text,
-    **kwargs
+    reply_markup=None
 ):
 
     try:
 
-        return await asyncio.to_thread(
-
+        await asyncio.to_thread(
             bot.edit_message_text,
-
             text,
-
             chat_id=CHAT_ID,
-
             message_id=message_id,
-
-            **kwargs
-
+            parse_mode="Markdown",
+            reply_markup=reply_markup,
+            disable_web_page_preview=True
         )
 
     except Exception as exc:
 
-        log.debug(
+        logger.debug(
             "Telegram edit error: %s",
             exc
         )
 
 
 # ============================================================
-# 9. SOLANA RPC
+# SOLANA RPC
 # ============================================================
 
-async def rpc_call(
+async def rpc_request(
     method,
     params
 ):
@@ -436,26 +342,16 @@ async def rpc_call(
     if http_session is None:
 
         http_session = aiohttp.ClientSession(
-
             timeout=aiohttp.ClientTimeout(
-                total=RPC_TIMEOUT
+                total=15
             )
-
         )
 
     payload = {
-
         "jsonrpc": "2.0",
-
-        "id":
-            int(
-                time.time() * 1000
-            ) % 2_000_000_000,
-
+        "id": int(time.time() * 1000),
         "method": method,
-
         "params": params
-
     }
 
     for attempt in range(3):
@@ -473,30 +369,27 @@ async def rpc_call(
                         f"RPC HTTP {response.status}"
                     )
 
-                data = await response.json()
+                result = await response.json()
 
-                if data.get("error"):
+                if result.get("error"):
 
                     raise RuntimeError(
-                        str(data["error"])
+                        str(result["error"])
                     )
 
-                return data.get(
-                    "result"
-                )
+                return result.get("result")
 
         except Exception as exc:
 
             if attempt == 2:
 
-                log.warning(
-                    "RPC failed %s: %s",
-                    method,
+                logger.warning(
+                    "RPC error: %s",
                     exc
                 )
 
             await asyncio.sleep(
-                1.5 * (attempt + 1)
+                1 + attempt
             )
 
     return None
@@ -506,92 +399,24 @@ async def get_transaction(
     signature
 ):
 
-    return await rpc_call(
-
+    return await rpc_request(
         "getTransaction",
-
         [
-
             signature,
-
             {
-
-                "encoding":
-                    "jsonParsed",
-
-                "commitment":
-                    "confirmed",
-
-                "maxSupportedTransactionVersion":
-                    0
-
+                "encoding": "jsonParsed",
+                "commitment": "confirmed",
+                "maxSupportedTransactionVersion": 0
             }
-
         ]
-
-    )
-
-
-def extract_pubkeys(tx):
-
-    keys = []
-
-    try:
-
-        message = (
-            tx["transaction"]
-            ["message"]
-        )
-
-        for item in message.get(
-            "accountKeys",
-            []
-        ):
-
-            if isinstance(
-                item,
-                dict
-            ):
-
-                pubkey = item.get(
-                    "pubkey"
-                )
-
-            else:
-
-                pubkey = item
-
-            if (
-                pubkey
-                and pubkey not in keys
-            ):
-
-                keys.append(pubkey)
-
-    except Exception:
-
-        pass
-
-    return keys
-
-
-def looks_like_solana_pubkey(
-    pubkey
-):
-
-    return bool(
-        re.fullmatch(
-            r"[1-9A-HJ-NP-Za-km-z]{32,44}",
-            pubkey
-        )
     )
 
 
 # ============================================================
-# 10. DEX MARKET DATA
+# DEXSCREENER MARKET DATA
 # ============================================================
 
-async def fetch_market(
+async def fetch_market_data(
     mint
 ):
 
@@ -600,21 +425,19 @@ async def fetch_market(
     if http_session is None:
 
         http_session = aiohttp.ClientSession(
-
             timeout=aiohttp.ClientTimeout(
-                total=DEX_TIMEOUT
+                total=10
             )
-
         )
 
     try:
 
+        url = DEX_API.format(
+            mint
+        )
+
         async with http_session.get(
-
-            DEX_TOKEN_URL.format(
-                mint
-            )
-
+            url
         ) as response:
 
             if response.status != 200:
@@ -623,207 +446,141 @@ async def fetch_market(
 
             data = await response.json()
 
-        pairs = (
-            data.get("pairs")
-            or []
-        )
+        pairs = data.get(
+            "pairs"
+        ) or []
 
-        if not pairs:
-
-            return None
-
-        sol_pairs = [
+        solana_pairs = [
 
             pair
 
             for pair in pairs
 
-            if pair.get(
-                "chainId"
-            ) == "solana"
+            if pair.get("chainId")
+            == "solana"
 
         ]
 
-        if not sol_pairs:
+        if not solana_pairs:
 
-            sol_pairs = pairs
+            return None
 
-        main_pair = max(
+        pair = max(
 
-            sol_pairs,
+            solana_pairs,
 
-            key=lambda pair:
-                float(
-                    (
-                        pair.get(
-                            "liquidity"
-                        )
-                        or {}
-                    ).get(
-                        "usd"
-                    )
-                    or 0
-                )
+            key=lambda x: float(
+                (
+                    x.get("liquidity")
+                    or {}
+                ).get("usd")
+                or 0
+            )
 
         )
 
-        transactions = (
-            main_pair.get(
-                "txns"
-            )
-            or {}
-        )
-
-        m5 = (
-            transactions.get(
-                "m5"
-            )
-            or {}
-        )
-
-        volume = (
-            main_pair.get(
-                "volume"
-            )
+        base = (
+            pair.get("baseToken")
             or {}
         )
 
         liquidity = (
-            main_pair.get(
-                "liquidity"
-            )
+            pair.get("liquidity")
             or {}
         )
 
-        change = (
-            main_pair.get(
-                "priceChange"
-            )
+        volume = (
+            pair.get("volume")
             or {}
         )
 
-        base = (
-            main_pair.get(
-                "baseToken"
-            )
+        transactions = (
+            pair.get("txns")
             or {}
         )
 
-        price_raw = main_pair.get(
-            "priceUsd"
+        five_minutes = (
+            transactions.get("m5")
+            or {}
         )
 
-        price = None
+        changes = (
+            pair.get("priceChange")
+            or {}
+        )
 
-        if price_raw not in (
-            None,
-            ""
-        ):
-
+        try:
             price = float(
-                price_raw
+                pair.get("priceUsd")
+                or 0
             )
-
-        buys = int(
-            m5.get(
-                "buys"
-            )
-            or 0
-        )
-
-        sells = int(
-            m5.get(
-                "sells"
-            )
-            or 0
-        )
+        except Exception:
+            price = 0.0
 
         return TokenSnapshot(
 
             mint=mint,
 
             symbol=str(
-                base.get(
-                    "symbol"
-                )
+                base.get("symbol")
                 or "UNKNOWN"
             ),
 
             name=str(
-                base.get(
-                    "name"
-                )
+                base.get("name")
                 or "Unknown"
             ),
 
-            price_usd=price,
+            price=price,
 
-            liquidity_usd=float(
-                liquidity.get(
-                    "usd"
-                )
+            liquidity=float(
+                liquidity.get("usd")
                 or 0
             ),
 
-            volume_5m_usd=float(
-                volume.get(
-                    "m5"
-                )
+            volume_5m=float(
+                volume.get("m5")
                 or 0
             ),
 
-            buys_5m=buys,
+            buys_5m=int(
+                five_minutes.get("buys")
+                or 0
+            ),
 
-            sells_5m=sells,
-
-            txns_5m=(
-                buys + sells
+            sells_5m=int(
+                five_minutes.get("sells")
+                or 0
             ),
 
             price_change_5m=float(
-                change.get(
-                    "m5"
-                )
-                or 0
-            ),
-
-            fdv=float(
-                main_pair.get(
-                    "fdv"
-                )
+                changes.get("m5")
                 or 0
             ),
 
             pair_address=str(
-                main_pair.get(
-                    "pairAddress"
-                )
+                pair.get("pairAddress")
                 or ""
             ),
 
             dex_id=str(
-                main_pair.get(
-                    "dexId"
-                )
+                pair.get("dexId")
                 or ""
             ),
 
             url=str(
-                main_pair.get(
-                    "url"
-                )
+                pair.get("url")
                 or ""
             ),
 
-            raw=main_pair
-
+            raw=pair
         )
 
     except Exception as exc:
 
-        log.debug(
-            "Market lookup failed %s: %s",
-            short_mint(mint),
+        logger.debug(
+            "DEX lookup failed for %s: %s",
+            short_address(mint),
             exc
         )
 
@@ -831,62 +588,54 @@ async def fetch_market(
 
 
 # ============================================================
-# 11. MARKET SCORE
+# SECURITY FILTER
 # ============================================================
 
-def score_market(
+def security_analysis(
     snapshot
 ):
 
-    score = 0.0
-
-    red_flags = []
+    score = 50.0
 
     evidence = []
 
-    # Liquidity
+    warnings = []
 
-    if snapshot.liquidity_usd >= 50_000:
+    if snapshot.liquidity >= 50_000:
 
-        score += 30
+        score += 25
 
         evidence.append(
-            "سيولة قوية"
+            "السيولة قوية"
         )
 
-    elif (
-        snapshot.liquidity_usd
-        >= MIN_LIQUIDITY_USD
-    ):
+    elif snapshot.liquidity >= MIN_LIQUIDITY:
 
-        score += 22
+        score += 15
 
         evidence.append(
-            "سيولة مقبولة"
+            "السيولة مقبولة"
         )
 
     else:
 
-        red_flags.append(
-            "سيولة ضعيفة"
+        score -= 30
+
+        warnings.append(
+            "السيولة ضعيفة"
         )
 
-    # Volume
+    if snapshot.volume_5m >= 25_000:
 
-    if snapshot.volume_5m_usd >= 25_000:
-
-        score += 25
+        score += 15
 
         evidence.append(
             "حجم تداول قوي"
         )
 
-    elif (
-        snapshot.volume_5m_usd
-        >= MIN_VOLUME_5M_USD
-    ):
+    elif snapshot.volume_5m >= MIN_VOLUME_5M:
 
-        score += 15
+        score += 8
 
         evidence.append(
             "حجم تداول مقبول"
@@ -894,52 +643,74 @@ def score_market(
 
     else:
 
-        red_flags.append(
-            "حجم ضعيف"
+        score -= 15
+
+        warnings.append(
+            "حجم التداول ضعيف"
         )
 
-    # Transactions
-
-    if snapshot.txns_5m >= 50:
-
-        score += 20
-
-        evidence.append(
-            "نشاط مرتفع"
-        )
-
-    elif (
-        snapshot.txns_5m
-        >= MIN_TXNS_5M
+    if (
+        snapshot.buys_5m
+        + snapshot.sells_5m
+        >= 10
     ):
 
-        score += 12
+        score += 10
 
         evidence.append(
-            "نشاط مقبول"
+            "نشاط تداول واضح"
         )
 
     else:
 
-        red_flags.append(
-            "نشاط ضعيف"
+        score -= 10
+
+        warnings.append(
+            "نشاط التداول منخفض"
         )
 
-    # Buy / Sell balance
+    return (
+        max(0, min(100, score)),
+        evidence,
+        warnings
+    )
+
+
+# ============================================================
+# MARKET ANALYSIS
+# ============================================================
+
+def market_analysis(
+    snapshot
+):
+
+    score = 50.0
+
+    evidence = []
+
+    warnings = []
 
     total = (
         snapshot.buys_5m
         + snapshot.sells_5m
     )
 
-    if total:
+    if total > 0:
 
         buy_ratio = (
             snapshot.buys_5m
             / total
         )
 
-        if buy_ratio >= 0.60:
+        if buy_ratio >= 0.65:
+
+            score += 25
+
+            evidence.append(
+                "ضغط شراء قوي"
+            )
+
+        elif buy_ratio >= 0.55:
 
             score += 15
 
@@ -949,255 +720,253 @@ def score_market(
 
         elif buy_ratio <= 0.35:
 
-            score -= 15
+            score -= 25
 
-            red_flags.append(
+            warnings.append(
                 "ضغط بيع مرتفع"
             )
 
-        else:
+    if snapshot.price_change_5m > 0:
 
-            score += 5
+        score += 10
 
-    # Momentum
+        evidence.append(
+            "زخم سعري إيجابي"
+        )
+
+    if snapshot.price_change_5m <= -10:
+
+        score -= 25
+
+        warnings.append(
+            "هبوط سعري حاد"
+        )
 
     if snapshot.price_change_5m >= 100:
 
-        score -= 12
+        score -= 10
 
-        red_flags.append(
-            "ارتفاع قصير شديد"
-        )
-
-    elif snapshot.price_change_5m >= 20:
-
-        score += 5
-
-        evidence.append(
-            "زخم إيجابي"
-        )
-
-    if snapshot.liquidity_usd <= 0:
-
-        red_flags.append(
-            "لا توجد سيولة قابلة للتحقق"
+        warnings.append(
+            "ارتفاع قصير شديد يحتاج حذرًا"
         )
 
     return (
-        max(
-            0,
-            min(
-                100,
-                score
-            )
-        ),
-        red_flags,
-        evidence
+        max(0, min(100, score)),
+        evidence,
+        warnings
     )
 
 
 # ============================================================
-# 12. SECURITY SCORE
+# BEHAVIOR ANALYSIS
 # ============================================================
 
-def score_security(
+def behavior_analysis(
     snapshot
 ):
 
     score = 50.0
 
-    red_flags = []
-
     evidence = []
 
-    if (
-        snapshot.liquidity_usd
-        >= MIN_LIQUIDITY_USD
-    ):
-
-        score += 20
-
-        evidence.append(
-            "السيولة قابلة للتحقق"
-        )
-
-    else:
-
-        score -= 25
-
-        red_flags.append(
-            "السيولة دون الحد"
-        )
-
-    if (
-        snapshot.txns_5m
-        >= MIN_TXNS_5M
-    ):
-
-        score += 10
-
-        evidence.append(
-            "نشاط سوق حقيقي ظاهر"
-        )
-
-    else:
-
-        score -= 10
-
-        red_flags.append(
-            "نشاط غير كاف"
-        )
-
-    if (
-        snapshot.volume_5m_usd
-        >= MIN_VOLUME_5M_USD
-    ):
-
-        score += 10
-
-        evidence.append(
-            "حجم قابل للقياس"
-        )
-
-    else:
-
-        score -= 10
-
-        red_flags.append(
-            "حجم غير كاف"
-        )
-
-    if (
-        snapshot.sells_5m
-        > snapshot.buys_5m * 2
-        and snapshot.sells_5m >= 10
-    ):
-
-        score -= 20
-
-        red_flags.append(
-            "اختلال قوي لصالح البيع"
-        )
-
-    return (
-        max(
-            0,
-            min(
-                100,
-                score
-            )
-        ),
-        red_flags,
-        evidence
-    )
-
-
-# ============================================================
-# 13. GOLD FILTER
-# ============================================================
-
-def score_candidate(
-    snapshot
-):
-
-    market_score, market_red, market_evidence = (
-        score_market(
-            snapshot
-        )
-    )
-
-    security_score, security_red, security_evidence = (
-        score_security(
-            snapshot
-        )
-    )
-
-    red_flags = list(
-        dict.fromkeys(
-            market_red
-            + security_red
-        )
-    )
-
-    evidence = list(
-        dict.fromkeys(
-            market_evidence
-            + security_evidence
-        )
-    )
-
-    critical_flags = {
-
-        "لا توجد سيولة قابلة للتحقق",
-
-        "سيولة ضعيفة",
-
-        "اختلال قوي لصالح البيع"
-
-    }
-
-    if critical_flags.intersection(
-        red_flags
-    ):
-
-        return None
-
-    behavior_score = 50.0
-
-    if (
-        snapshot.price_change_5m
-        > 0
-    ):
-
-        behavior_score += 10
+    warnings = []
 
     if (
         snapshot.buys_5m
         > snapshot.sells_5m
     ):
 
-        behavior_score += 10
+        score += 20
+
+        evidence.append(
+            "المشترون أقوى حاليًا"
+        )
 
     if (
         snapshot.sells_5m
         > snapshot.buys_5m * 1.5
     ):
 
-        behavior_score -= 20
+        score -= 25
 
-    behavior_score = max(
-        0,
-        min(
-            100,
-            behavior_score
+        warnings.append(
+            "البيع أسرع من الشراء"
+        )
+
+    if (
+        snapshot.liquidity > 0
+        and snapshot.volume_5m
+        > snapshot.liquidity
+    ):
+
+        warnings.append(
+            "حركة تداول كبيرة مقارنة بالسيولة"
+        )
+
+        score -= 10
+
+    return (
+        max(0, min(100, score)),
+        evidence,
+        warnings
+    )
+
+
+# ============================================================
+# WHALE SUPPORT
+# ============================================================
+
+def whale_analysis(
+    snapshot
+):
+
+    score = 0.0
+
+    evidence = []
+
+    if (
+        snapshot.liquidity >= 100_000
+    ):
+
+        score += 25
+
+        evidence.append(
+            "سيولة كبيرة"
+        )
+
+    if (
+        snapshot.volume_5m >= 50_000
+    ):
+
+        score += 25
+
+        evidence.append(
+            "حجم تداول كبير"
+        )
+
+    if (
+        snapshot.buys_5m >= 30
+        and snapshot.buys_5m
+        > snapshot.sells_5m
+    ):
+
+        score += 30
+
+        evidence.append(
+            "نشاط شراء كبير ومتكرر"
+        )
+
+    if (
+        snapshot.price_change_5m > 0
+        and snapshot.buys_5m
+        > snapshot.sells_5m
+    ):
+
+        score += 20
+
+        evidence.append(
+            "الدعم الشرائي مستمر"
+        )
+
+    return (
+        min(100, score),
+        evidence
+    )
+
+
+# ============================================================
+# GOLD / DIAMOND FILTER
+# ============================================================
+
+def analyze_token(
+    snapshot
+):
+
+    security_score, sec_evidence, sec_warnings = (
+        security_analysis(
+            snapshot
         )
     )
 
-    total_score = (
+    market_score, market_evidence, market_warnings = (
+        market_analysis(
+            snapshot
+        )
+    )
+
+    behavior_score, behavior_evidence, behavior_warnings = (
+        behavior_analysis(
+            snapshot
+        )
+    )
+
+    final_score = (
 
         security_score * 0.45
 
-        + market_score * 0.40
+        + market_score * 0.35
 
-        + behavior_score * 0.15
+        + behavior_score * 0.20
 
     )
 
+    warnings = list(
+        dict.fromkeys(
+            sec_warnings
+            + market_warnings
+            + behavior_warnings
+        )
+    )
+
+    evidence = list(
+        dict.fromkeys(
+            sec_evidence
+            + market_evidence
+            + behavior_evidence
+        )
+    )
+
     if (
-        total_score
-        < MIN_GOLD_SCORE
+        security_score < 60
+        or snapshot.liquidity
+        < MIN_LIQUIDITY
     ):
 
         return None
 
+    if final_score < MIN_GOLD_SCORE:
+
+        return None
+
+    whale_score, whale_evidence = (
+        whale_analysis(
+            snapshot
+        )
+    )
+
+    diamond_score = (
+
+        final_score * 0.70
+        + whale_score * 0.30
+
+    )
+
+    status = "GOLD"
+
+    if (
+        diamond_score
+        >= MIN_DIAMOND_SCORE
+    ):
+
+        status = "DIAMOND"
+
+    evidence.extend(
+        whale_evidence
+    )
+
     return Candidate(
 
         snapshot=snapshot,
-
-        score=round(
-            total_score,
-            2
-        ),
 
         security_score=round(
             security_score,
@@ -1214,183 +983,56 @@ def score_candidate(
             2
         ),
 
-        red_flags=red_flags,
+        final_score=round(
+            final_score,
+            2
+        ),
 
-        evidence=evidence
+        whale_score=round(
+            whale_score,
+            2
+        ),
+
+        status=status,
+
+        evidence=evidence,
+
+        warnings=warnings
 
     )
 
 
 # ============================================================
-# 14. RELATIVE SIEVE
+# SIEVE
 # ============================================================
 
-def rank_candidates():
+def best_candidate():
 
-    now = utc_now()
+    valid = list(
+        candidates.values()
+    )
 
-    valid = []
+    if not valid:
 
-    for candidate in (
-        candidate_by_mint.values()
-    ):
-
-        age = (
-            now
-            - candidate.first_seen
-        ).total_seconds()
-
-        if (
-            age
-            <= SIEVE_WINDOW_SECONDS
-        ):
-
-            valid.append(
-                candidate
-            )
+        return None
 
     valid.sort(
 
-        key=lambda candidate: (
-
-            candidate.score,
-
-            candidate.snapshot
-            .liquidity_usd,
-
-            candidate.snapshot
-            .volume_5m_usd
-
+        key=lambda x: (
+            x.final_score,
+            x.whale_score,
+            x.snapshot.liquidity,
+            x.snapshot.volume_5m
         ),
 
         reverse=True
-
     )
 
-    return valid
+    return valid[0]
 
 
 # ============================================================
-# 15. WHALE / DIAMOND LAYER
-# ============================================================
-
-async def estimate_whale_support(
-    candidate
-):
-
-    snapshot = (
-        candidate.snapshot
-    )
-
-    score = 0.0
-
-    evidence = []
-
-    if (
-        snapshot.volume_5m_usd
-        >= 50_000
-        and snapshot.liquidity_usd
-        >= 50_000
-    ):
-
-        score += 30
-
-        evidence.append(
-            "رأس مال/نشاط كبير ظاهر"
-        )
-
-    if (
-        snapshot.buys_5m >= 30
-        and snapshot.buys_5m
-        > snapshot.sells_5m
-    ):
-
-        score += 20
-
-        evidence.append(
-            "شراء متكرر خلال 5 دقائق"
-        )
-
-    if (
-        snapshot.liquidity_usd
-        >= 100_000
-    ):
-
-        score += 15
-
-        evidence.append(
-            "سيولة كبيرة"
-        )
-
-    if (
-        snapshot.price_change_5m > 0
-        and snapshot.sells_5m
-        < snapshot.buys_5m
-    ):
-
-        score += 15
-
-        evidence.append(
-            "الدعم الشرائي مستمر"
-        )
-
-    return (
-        min(
-            100,
-            score
-        ),
-        evidence
-    )
-
-
-async def enrich_diamond(
-    candidate
-):
-
-    whale_score, whale_evidence = (
-        await estimate_whale_support(
-            candidate
-        )
-    )
-
-    candidate.whale_score = (
-        whale_score
-    )
-
-    candidate.diamond_score = round(
-
-        candidate.score * 0.70
-
-        + whale_score * 0.30,
-
-        2
-
-    )
-
-    candidate.evidence.extend(
-        whale_evidence
-    )
-
-    if (
-        candidate.diamond_score
-        >= MIN_DIAMOND_SCORE
-    ):
-
-        candidate.status = (
-            "DIAMOND"
-        )
-
-    else:
-
-        candidate.status = (
-            "GOLD"
-        )
-
-    return candidate
-
-
-# ============================================================
-# 16. TELEGRAM KEYBOARDS
+# TELEGRAM BUTTONS
 # ============================================================
 
 def candidate_keyboard(
@@ -1410,7 +1052,7 @@ def candidate_keyboard(
         ),
 
         InlineKeyboardButton(
-            "🟢 دخلت شراء",
+            "🛡️ دخلت شراء",
             callback_data=
             f"buy:{mint}"
         )
@@ -1420,7 +1062,7 @@ def candidate_keyboard(
     keyboard.row(
 
         InlineKeyboardButton(
-            "🔎 تفاصيل",
+            "🔎 التفاصيل",
             callback_data=
             f"details:{mint}"
         )
@@ -1430,7 +1072,7 @@ def candidate_keyboard(
     return keyboard
 
 
-def position_keyboard():
+def guardian_keyboard():
 
     keyboard = (
         InlineKeyboardMarkup()
@@ -1441,7 +1083,7 @@ def position_keyboard():
         InlineKeyboardButton(
             "⏹️ أنهيت البيع",
             callback_data=
-            "position_end"
+            "finish_position"
         )
 
     )
@@ -1460,13 +1102,13 @@ def radar_keyboard():
         InlineKeyboardButton(
             "▶️ ابدأ",
             callback_data=
-            "radar_start"
+            "start_radar"
         ),
 
         InlineKeyboardButton(
             "⏹️ انتهاء",
             callback_data=
-            "radar_end"
+            "stop_display"
         )
 
     )
@@ -1475,86 +1117,105 @@ def radar_keyboard():
 
 
 # ============================================================
-# 17. SEND GOLD / DIAMOND
+# SEND CANDIDATE
 # ============================================================
 
 async def send_candidate(
     candidate
 ):
 
-    snapshot = (
-        candidate.snapshot
+    token = candidate.snapshot
+
+    if candidate.status == "DIAMOND":
+
+        title = (
+            "💎 **عملة ماسية — دعم قوي محتمل**"
+        )
+
+    else:
+
+        title = (
+            "🥇 **عملة ذهبية — مرشح قوي**"
+        )
+
+    evidence_text = "\n".join(
+
+        "• " + item
+
+        for item
+        in candidate.evidence[:6]
+
     )
 
-    icon = (
-        "💎"
-        if candidate.status
-        == "DIAMOND"
-        else "🥇"
+    warning_text = "\n".join(
+
+        "• " + item
+
+        for item
+        in candidate.warnings[:4]
+
     )
 
     text = (
 
-        f"{icon} **{candidate.status} — "
-        f"مرشح رادار**\n\n"
+        f"{title}\n\n"
 
-        f"🪙 **العملة:** "
-        f"`{snapshot.symbol}`\n"
+        f"🪙 **الرمز:** "
+        f"`{token.symbol}`\n"
 
-        f"🔑 **العقد:** "
-        f"`{snapshot.mint}`\n"
+        f"🔑 **العقد:**\n"
+        f"`{token.mint}`\n\n"
 
-        f"🛡️ **درجة الفحص:** "
-        f"`{candidate.score}/100`\n"
+        f"🛡️ **درجة الأمان:** "
+        f"`{candidate.security_score}/100`\n"
+
+        f"🏆 **الدرجة النهائية:** "
+        f"`{candidate.final_score}/100`\n"
+
+        f"🐋 **مؤشر الدعم الكبير:** "
+        f"`{candidate.whale_score}/100`\n\n"
+
+        f"💰 **السعر الحي:** "
+        f"`{money(token.price)}`\n"
 
         f"💧 **السيولة:** "
-        f"{fmt_money(snapshot.liquidity_usd)}\n"
+        f"`{money(token.liquidity)}`\n"
 
-        f"💰 **السعر:** "
-        f"{fmt_money(snapshot.price_usd)}\n"
+        f"📊 **حجم 5 دقائق:** "
+        f"`{money(token.volume_5m)}`\n"
 
-        f"📈 **5 دقائق:** "
-        f"{fmt_pct(snapshot.price_change_5m)}\n"
+        f"📈 **تغير 5 دقائق:** "
+        f"`{percent(token.price_change_5m)}`\n"
 
-        f"📊 **الحجم 5د:** "
-        f"{fmt_money(snapshot.volume_5m_usd)}\n"
+        f"🟢 **شراء:** `{token.buys_5m}`\n"
 
-        f"🐋 **دعم كبير محتمل:** "
-        f"`{candidate.whale_score:.0f}/100`\n\n"
+        f"🔴 **بيع:** `{token.sells_5m}`\n\n"
 
-        f"🔎 **الخلاصة:** "
+        f"🔎 **الأدلة:**\n"
+        f"{evidence_text or 'لا توجد أدلة إضافية'}\n\n"
 
-        + (
-            "أدلة إضافية على دعم قوي"
-            if candidate.status
-            == "DIAMOND"
-            else
-            "مرشح Gold تحت المراقبة"
-        )
+        f"⚠️ **التحذيرات:**\n"
+        f"{warning_text or 'لا يوجد تحذير رئيسي'}\n\n"
 
-        + "\n\n"
-
-        "⚠️ هذه إشارة رصد وليست "
-        "ضمانًا للربح أو الأمان."
+        "⚠️ هذه مراقبة آلية وليست ضمانًا "
+        "للربح أو للأمان المطلق."
 
     )
 
-    await tg_send(
+    await send_message(
 
         text,
 
         reply_markup=
         candidate_keyboard(
-            snapshot.mint
-        ),
-
-        disable_web_page_preview=True
+            token.mint
+        )
 
     )
 
 
 # ============================================================
-# 18. POSITION GUARDIAN START
+# START POSITION
 # ============================================================
 
 async def start_position(
@@ -1564,20 +1225,101 @@ async def start_position(
     global position_active
     global position_mint
     global position_entry_price
-    global position_started_at
     global position_message_id
     global radar_active
 
-    snapshot = await fetch_market(
+    snapshot = await fetch_market_data(
         mint
     )
 
-    if (
-        not snapshot
-        or snapshot.price_usd is None
-    ):
+    if not snapshot:
 
-        await tg_send(
+        await send_message(
 
-            "⚠️ **تعذر بدء المراقبة:**\n"
-            "لم أستطع الحصول على
+            "⚠️ **تعذر بدء المراقبة.**\n"
+            "لم تصل بيانات سوق حية للعقد الآن."
+
+        )
+
+        return
+
+    if snapshot.price <= 0:
+
+        await send_message(
+
+            "⚠️ **تعذر بدء المراقبة.**\n"
+            "السعر الحالي غير صالح."
+
+        )
+
+        return
+
+    position_active = True
+
+    position_mint = mint
+
+    position_entry_price = (
+        snapshot.price
+    )
+
+    radar_active = False
+
+    message = await send_message(
+
+        "🛡️ **بدأت المراقبة اللاحقة**\n\n"
+
+        f"🔑 العقد:\n`{mint}`\n\n"
+
+        f"💰 سعر بداية المراقبة:\n"
+        f"`{money(snapshot.price)}`\n\n"
+
+        "📡 الحارس يراقب السعر والسيولة "
+        "والشراء والبيع باستمرار.\n\n"
+
+        "⏸️ تم إيقاف عرض العملات الجديدة "
+        "حتى تنهي هذه المراقبة.",
+
+        reply_markup=
+        guardian_keyboard()
+
+    )
+
+    if message:
+
+        position_message_id = (
+            message.message_id
+        )
+
+
+# ============================================================
+# FINISH POSITION
+# ============================================================
+
+async def finish_position():
+
+    global position_active
+    global position_mint
+    global position_entry_price
+    global position_message_id
+    global radar_active
+
+    old_mint = position_mint
+
+    position_active = False
+
+    position_mint = None
+
+    position_entry_price = None
+
+    position_message_id = None
+
+    radar_active = True
+
+    await send_message(
+
+        "🟢 **انتهت المراقبة.**\n\n"
+
+        f"العقد السابق: "
+        f"`{short_address(old_mint)}`\n\n"
+
+        "▶️
