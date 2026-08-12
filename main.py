@@ -2353,4 +2353,3180 @@ def security_analysis(
 
         score -= 15
 
-       
+        warnings.append(
+            "حجم التداول ضعيف"
+        )
+
+
+    # --------------------------------------------------------
+    # ACTIVITY
+    # --------------------------------------------------------
+
+    total = (
+        snapshot.buys_5m
+        + snapshot.sells_5m
+    )
+
+
+    if total >= 20:
+
+        score += 10
+
+        evidence.append(
+            "نشاط تداول واضح"
+        )
+
+    elif total >= 10:
+
+        score += 5
+
+        evidence.append(
+            "نشاط تداول موجود"
+        )
+
+    else:
+
+        score -= 10
+
+        warnings.append(
+            "نشاط التداول منخفض"
+        )
+
+
+    # --------------------------------------------------------
+    # MINT AUTHORITY
+    # --------------------------------------------------------
+
+    if snapshot.mint_authority == "__UNKNOWN__":
+
+        warnings.append(
+            "حالة Mint Authority غير مؤكدة"
+        )
+
+    elif snapshot.mint_authority:
+
+        score -= 12
+
+        warnings.append(
+            "Mint Authority ما زالت موجودة"
+        )
+
+    else:
+
+        score += 6
+
+        evidence.append(
+            "Mint Authority غير موجودة"
+        )
+
+
+    # --------------------------------------------------------
+    # FREEZE AUTHORITY
+    # --------------------------------------------------------
+
+    if snapshot.freeze_authority == "__UNKNOWN__":
+
+        warnings.append(
+            "حالة Freeze Authority غير مؤكدة"
+        )
+
+    elif snapshot.freeze_authority:
+
+        score -= 18
+
+        warnings.append(
+            "Freeze Authority ما زالت موجودة"
+        )
+
+    else:
+
+        score += 8
+
+        evidence.append(
+            "Freeze Authority غير موجودة"
+        )
+
+
+    # --------------------------------------------------------
+    # TURNOVER RISK
+    # --------------------------------------------------------
+
+    if snapshot.liquidity > 0:
+
+        turnover = (
+            snapshot.volume_5m
+            / snapshot.liquidity
+        )
+
+
+        if turnover >= 2:
+
+            score -= 8
+
+            warnings.append(
+                "حجم ضخم مقارنة بالسيولة"
+            )
+
+
+    return (
+
+        max(
+            0,
+            min(
+                100,
+                score
+            )
+        ),
+
+        evidence,
+
+        warnings
+
+    )
+
+
+# ============================================================
+# MARKET ANALYSIS
+# ============================================================
+
+def market_analysis(
+    snapshot
+):
+
+    score = 50.0
+
+    evidence = []
+
+    warnings = []
+
+
+    total = (
+        snapshot.buys_5m
+        + snapshot.sells_5m
+    )
+
+
+    if total > 0:
+
+        buy_ratio = (
+            snapshot.buys_5m
+            / total
+        )
+
+
+        if buy_ratio >= 0.70:
+
+            score += 28
+
+            evidence.append(
+                "ضغط شراء قوي جدًا"
+            )
+
+        elif buy_ratio >= 0.60:
+
+            score += 18
+
+            evidence.append(
+                "ضغط شراء إيجابي"
+            )
+
+        elif buy_ratio <= 0.30:
+
+            score -= 28
+
+            warnings.append(
+                "ضغط بيع مرتفع"
+            )
+
+        elif buy_ratio <= 0.40:
+
+            score -= 15
+
+            warnings.append(
+                "الشراء ضعيف"
+            )
+
+
+    if snapshot.price_change_5m > 0:
+
+        score += min(
+            15,
+            snapshot.price_change_5m / 4
+        )
+
+        evidence.append(
+            "زخم سعري إيجابي"
+        )
+
+
+    if snapshot.price_change_5m <= -10:
+
+        score -= 25
+
+        warnings.append(
+            "هبوط سعري حاد"
+        )
+
+
+    if snapshot.price_change_5m >= 100:
+
+        score -= 10
+
+        warnings.append(
+            "ارتفاع شديد يحتاج حذرًا"
+        )
+
+
+    if snapshot.price_change_1h > 0:
+
+        score += 5
+
+
+    return (
+
+        max(
+            0,
+            min(
+                100,
+                score
+            )
+        ),
+
+        evidence,
+
+        warnings
+
+    )
+
+
+# ============================================================
+# BEHAVIOR ANALYSIS
+# ============================================================
+
+def behavior_analysis(
+    snapshot
+):
+
+    score = 50.0
+
+    evidence = []
+
+    warnings = []
+
+
+    if (
+        snapshot.buys_5m
+        > snapshot.sells_5m
+    ):
+
+        score += 18
+
+        evidence.append(
+            "المشترون أقوى حاليًا"
+        )
+
+
+    if (
+        snapshot.sells_5m
+        > snapshot.buys_5m * 1.5
+    ):
+
+        score -= 25
+
+        warnings.append(
+            "البيع أسرع من الشراء"
+        )
+
+
+    if snapshot.liquidity > 0:
+
+        turnover = (
+            snapshot.volume_5m
+            / snapshot.liquidity
+        )
+
+
+        if turnover >= 2:
+
+            score -= 15
+
+            warnings.append(
+                "دوران تداول مرتفع جدًا مقابل السيولة"
+            )
+
+        elif turnover >= 1:
+
+            score -= 5
+
+            warnings.append(
+                "دوران تداول مرتفع مقابل السيولة"
+            )
+
+
+    if (
+
+        snapshot.price_change_5m > 0
+
+        and
+
+        snapshot.buys_5m
+        > snapshot.sells_5m
+
+    ):
+
+        score += 12
+
+        evidence.append(
+            "السعر والشراء متوافقان"
+        )
+
+
+    if (
+
+        snapshot.price_change_5m < 0
+
+        and
+
+        snapshot.sells_5m
+        > snapshot.buys_5m
+
+    ):
+
+        score -= 15
+
+        warnings.append(
+            "السعر والبيع متوافقان في اتجاه سلبي"
+        )
+
+
+    return (
+
+        max(
+            0,
+            min(
+                100,
+                score
+            )
+        ),
+
+        evidence,
+
+        warnings
+
+    )
+
+
+# ============================================================
+# WHALE SUPPORT
+# ============================================================
+
+def whale_analysis(
+    snapshot
+):
+
+    score = 0.0
+
+    evidence = []
+
+
+    if snapshot.liquidity >= 100_000:
+
+        score += 20
+
+        evidence.append(
+            "سيولة تسمح بنشاط كبير"
+        )
+
+
+    if snapshot.volume_5m >= 50_000:
+
+        score += 20
+
+        evidence.append(
+            "حجم تداول كبير"
+        )
+
+
+    if (
+
+        snapshot.buys_5m >= 30
+
+        and
+
+        snapshot.buys_5m
+        > snapshot.sells_5m
+
+    ):
+
+        score += 30
+
+        evidence.append(
+            "نشاط شراء كبير ومتكرر"
+        )
+
+
+    if (
+
+        snapshot.sells_5m >= 30
+
+        and
+
+        snapshot.sells_5m
+        > snapshot.buys_5m
+
+    ):
+
+        score += 10
+
+        evidence.append(
+            "نشاط بيع كبير"
+        )
+
+
+    if (
+
+        snapshot.price_change_5m > 0
+
+        and
+
+        snapshot.buys_5m
+        > snapshot.sells_5m
+
+    ):
+
+        score += 20
+
+        evidence.append(
+            "الدعم الشرائي مستمر"
+        )
+
+
+    return (
+
+        min(
+            100,
+            score
+        ),
+
+        evidence
+
+    )
+
+
+# ============================================================
+# UNIFIED ANALYZER
+# ============================================================
+
+def analyze_snapshot(
+    snapshot
+):
+
+    security, sec_ev, sec_warn = (
+        security_analysis(
+            snapshot
+        )
+    )
+
+
+    market, market_ev, market_warn = (
+        market_analysis(
+            snapshot
+        )
+    )
+
+
+    behavior, behavior_ev, behavior_warn = (
+        behavior_analysis(
+            snapshot
+        )
+    )
+
+
+    whale, whale_ev = (
+        whale_analysis(
+            snapshot
+        )
+    )
+
+
+    final_score = (
+
+        security * 0.45
+
+        + market * 0.35
+
+        + behavior * 0.20
+
+    )
+
+
+    diamond_score = (
+
+        final_score * 0.70
+
+        + whale * 0.30
+
+    )
+
+
+    evidence = list(
+        dict.fromkeys(
+            sec_ev
+            + market_ev
+            + behavior_ev
+            + whale_ev
+        )
+    )
+
+
+    warnings = list(
+        dict.fromkeys(
+            sec_warn
+            + market_warn
+            + behavior_warn
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # STRICT GOLD GATE
+    # --------------------------------------------------------
+
+    if snapshot.liquidity < MIN_LIQUIDITY:
+
+        return None
+
+
+    if security < 60:
+
+        return None
+
+
+    if final_score < MIN_GOLD_SCORE:
+
+        return None
+
+
+    status = "GOLD"
+
+
+    if (
+        diamond_score
+        >= MIN_DIAMOND_SCORE
+    ):
+
+        status = "DIAMOND"
+
+
+    return Candidate(
+
+        snapshot=snapshot,
+
+        security_score=round(
+            security,
+            2
+        ),
+
+        market_score=round(
+            market,
+            2
+        ),
+
+        behavior_score=round(
+            behavior,
+            2
+        ),
+
+        whale_score=round(
+            whale,
+            2
+        ),
+
+        final_score=round(
+            final_score,
+            2
+        ),
+
+        diamond_score=round(
+            diamond_score,
+            2
+        ),
+
+        status=status,
+
+        evidence=evidence,
+
+        warnings=warnings
+
+    )
+
+
+# ============================================================
+# CANDIDATE STATE
+# ============================================================
+
+def candidate_changed(
+    old,
+    new
+):
+
+    if old is None:
+
+        return True
+
+
+    if old.status != new.status:
+
+        return True
+
+
+    if abs(
+        old.final_score
+        - new.final_score
+    ) >= 5:
+
+        return True
+
+
+    if abs(
+        old.diamond_score
+        - new.diamond_score
+    ) >= 5:
+
+        return True
+
+
+    return False
+
+
+async def evaluate_and_store(
+    snapshot,
+    send_alert=True
+):
+
+    reset_daily_stats_if_needed()
+
+
+    old = candidates.get(
+        snapshot.mint
+    )
+
+
+    new_candidate = analyze_snapshot(
+        snapshot
+    )
+
+
+    # If a previously good candidate temporarily
+    # loses the strict gate, keep the historical object.
+    if new_candidate is None:
+
+        if old:
+
+            old.snapshot = snapshot
+
+            old.last_seen = time.time()
+
+            old.updates += 1
+
+        return None
+
+
+    if old:
+
+        new_candidate.first_seen = (
+            old.first_seen
+        )
+
+        new_candidate.updates = (
+            old.updates + 1
+        )
+
+
+    new_candidate.last_seen = time.time()
+
+
+    candidates[
+        snapshot.mint
+    ] = new_candidate
+
+
+    if len(candidates) > MAX_CANDIDATES:
+
+        oldest = sorted(
+
+            candidates.items(),
+
+            key=lambda item:
+                item[1].last_seen
+
+        )[
+            :len(candidates)
+            - MAX_CANDIDATES
+        ]
+
+
+        for mint, _ in oldest:
+
+            candidates.pop(
+                mint,
+                None
+            )
+
+
+    daily_stats[
+        "events"
+    ] += 1
+
+
+    hourly_stats[
+        current_hour()
+    ][
+        "events"
+    ] += 1
+
+
+    if new_candidate.status == "GOLD":
+
+        daily_stats[
+            "gold"
+        ] += 1
+
+        hourly_stats[
+            current_hour()
+        ][
+            "gold"
+        ] += 1
+
+
+    elif new_candidate.status == "DIAMOND":
+
+        daily_stats[
+            "diamond"
+        ] += 1
+
+        hourly_stats[
+            current_hour()
+        ][
+            "diamond"
+        ] += 1
+
+
+    archive.append(
+
+        {
+
+            "type":
+                "candidate",
+
+            "timestamp":
+                time.time(),
+
+            "status":
+                new_candidate.status,
+
+            "mint":
+                snapshot.mint,
+
+            "score":
+                new_candidate.final_score,
+
+            "diamond_score":
+                new_candidate.diamond_score,
+
+            "source":
+                snapshot.source,
+
+        }
+
+    )
+
+
+    # --------------------------------------------------------
+    # TELEGRAM FOCUS LOCK
+    # --------------------------------------------------------
+
+    if (
+
+        send_alert
+
+        and
+
+        radar_active
+
+        and
+
+        not position_active
+
+    ):
+
+        if (
+
+            old is None
+
+            or
+
+            candidate_changed(
+                old,
+                new_candidate
+            )
+
+        ):
+
+            await send_candidate(
+                new_candidate
+            )
+
+
+    return new_candidate
+
+
+# ============================================================
+# BEST CANDIDATE
+# ============================================================
+
+def best_candidate():
+
+    valid = list(
+        candidates.values()
+    )
+
+
+    if not valid:
+
+        return None
+
+
+    valid.sort(
+
+        key=lambda candidate: (
+
+            candidate.diamond_score,
+
+            candidate.final_score,
+
+            candidate.whale_score,
+
+            candidate.snapshot.liquidity,
+
+            candidate.snapshot.volume_5m,
+
+        ),
+
+        reverse=True
+
+    )
+
+
+    return valid[0]
+
+
+# ============================================================
+# FLOW ENGINE
+# ============================================================
+
+def record_flow(
+
+    mint,
+
+    kind,
+
+    value_usd,
+
+    source,
+
+    details=""
+
+):
+
+    event = FlowEvent(
+
+        mint=mint,
+
+        kind=kind,
+
+        value_usd=max(
+            0.0,
+            safe_float(
+                value_usd
+            )
+        ),
+
+        source=source,
+
+        details=details,
+
+    )
+
+
+    flow_history.append(
+        asdict(
+            event
+        )
+    )
+
+
+    hour = current_hour()
+
+
+    if kind == "in":
+
+        hourly_stats[
+            hour
+        ][
+            "flow_in"
+        ] += event.value_usd
+
+
+    elif kind == "out":
+
+        hourly_stats[
+            hour
+        ][
+            "flow_out"
+        ] += event.value_usd
+
+
+    if event.value_usd > 0:
+
+        hourly_stats[
+            hour
+        ][
+            "volume"
+        ] += event.value_usd
+
+
+# ============================================================
+# TELEGRAM BUTTONS
+# ============================================================
+
+def candidate_keyboard(
+    mint
+):
+
+    keyboard = (
+        InlineKeyboardMarkup()
+    )
+
+
+    keyboard.row(
+
+        InlineKeyboardButton(
+
+            "📋 نسخ العقد",
+
+            callback_data=
+                f"copy:{mint}"
+
+        ),
+
+        InlineKeyboardButton(
+
+            "🛡️ دخلت شراء",
+
+            callback_data=
+                f"buy:{mint}"
+
+        )
+
+    )
+
+
+    keyboard.row(
+
+        InlineKeyboardButton(
+
+            "🔎 التفاصيل",
+
+            callback_data=
+                f"details:{mint}"
+
+        )
+
+    )
+
+
+    return keyboard
+
+
+def guardian_keyboard():
+
+    keyboard = (
+        InlineKeyboardMarkup()
+    )
+
+
+    keyboard.row(
+
+        InlineKeyboardButton(
+
+            "⏹️ انتهاء الجلسة",
+
+            callback_data=
+                "finish_position"
+
+        )
+
+    )
+
+
+    return keyboard
+
+
+# ============================================================
+# SEND CANDIDATE
+# ============================================================
+
+async def send_candidate(
+    candidate
+):
+
+    token = candidate.snapshot
+
+
+    if candidate.status == "DIAMOND":
+
+        title = (
+            "💎 **DIAMOND — تطور قوي في الأدلة**"
+        )
+
+    else:
+
+        title = (
+            "🥇 **GOLD — مرشح مبكر**"
+        )
+
+
+    evidence_text = "\n".join(
+
+        "• " + item
+
+        for item
+        in candidate.evidence[:8]
+
+    )
+
+
+    warning_text = "\n".join(
+
+        "• " + item
+
+        for item
+        in candidate.warnings[:6]
+
+    )
+
+
+    text = (
+
+        f"{title}\n\n"
+
+        f"🪙 **الرمز:** "
+        f"`{token.symbol}`\n"
+
+        f"🔑 **العقد:**\n"
+        f"`{token.mint}`\n\n"
+
+        f"🛡️ **الأمان:** "
+        f"`{candidate.security_score}/100`\n"
+
+        f"🏆 **Final:** "
+        f"`{candidate.final_score}/100`\n"
+
+        f"💎 **Diamond:** "
+        f"`{candidate.diamond_score}/100`\n"
+
+        f"🐋 **Whale:** "
+        f"`{candidate.whale_score}/100`\n\n"
+
+        f"💰 **السعر:** "
+        f"`{money(token.price)}`\n"
+
+        f"💧 **السيولة:** "
+        f"`{money(token.liquidity)}`\n"
+
+        f"📊 **Volume 5m:** "
+        f"`{money(token.volume_5m)}`\n"
+
+        f"📈 **Change 5m:** "
+        f"`{pct(token.price_change_5m)}`\n"
+
+        f"🟢 **Buy:** "
+        f"`{token.buys_5m}`\n"
+
+        f"🔴 **Sell:** "
+        f"`{token.sells_5m}`\n"
+
+        f"🏦 **DEX:** "
+        f"`{token.dex_id or 'غير معروف'}`\n"
+
+        f"🔭 **Source:** "
+        f"`{token.source}`\n\n"
+
+        f"🔎 **الأدلة:**\n"
+        f"{evidence_text or 'لا توجد أدلة إضافية'}\n\n"
+
+        f"⚠️ **التحذيرات:**\n"
+        f"{warning_text or 'لا يوجد تحذير رئيسي'}\n\n"
+
+        "⚠️ رصد آلي وليس ضمانًا للربح "
+        "أو الأمان المطلق."
+
+    )
+
+
+    await send_message(
+
+        text,
+
+        reply_markup=
+            candidate_keyboard(
+                token.mint
+            )
+
+    )
+
+
+# ============================================================
+# GUARDIAN START
+# ============================================================
+
+async def start_position(
+    mint
+):
+
+    global position_active
+    global position_mint
+    global position_entry_price
+    global position_message_id
+    global position_started_at
+    global radar_active
+
+
+    if position_active:
+
+        await send_message(
+
+            "⚠️ توجد جلسة Guardian "
+            "نشطة بالفعل."
+
+        )
+
+        return
+
+
+    snapshot = await fetch_market_data(
+        mint
+    )
+
+
+    if (
+        not snapshot
+        or snapshot.price <= 0
+    ):
+
+        await send_message(
+
+            "⚠️ **تعذر بدء Guardian.**\n"
+            "لم تصل بيانات سوق حية صالحة للعقد."
+
+        )
+
+        return
+
+
+    position_active = True
+
+    position_mint = mint
+
+    position_entry_price = (
+        snapshot.price
+    )
+
+    position_started_at = (
+        time.time()
+    )
+
+
+    # --------------------------------------------------------
+    # FOCUS LOCK
+    # --------------------------------------------------------
+    #
+    # During Guardian:
+    # new candidate alerts are paused.
+    #
+    radar_active = False
+
+
+    message = await send_message(
+
+        "🛡️ **GUARDIAN بدأ**\n\n"
+
+        f"🔑 العقد:\n"
+        f"`{mint}`\n\n"
+
+        f"💰 سعر بداية المراقبة:\n"
+        f"`{money(snapshot.price)}`\n\n"
+
+        "📡 الآن تتم مراقبة السعر "
+        "والسيولة والشراء والبيع "
+        "والتغيرات السريعة باستمرار.\n\n"
+
+        "🔕 تم تعليق تنبيهات العملات الجديدة "
+        "حتى تضغط «انتهاء الجلسة».\n\n"
+
+        "⚠️ Guardian لا ينفذ شراء "
+        "أو بيع تلقائيًا.",
+
+        reply_markup=
+            guardian_keyboard()
+
+    )
+
+
+    if message:
+
+        position_message_id = (
+            message.message_id
+        )
+
+
+# ============================================================
+# GUARDIAN FINISH
+# ============================================================
+
+async def finish_position():
+
+    global position_active
+    global position_mint
+    global position_entry_price
+    global position_message_id
+    global position_started_at
+    global radar_active
+
+
+    old_mint = position_mint
+
+
+    position_active = False
+
+    position_mint = None
+
+    position_entry_price = None
+
+    position_message_id = None
+
+    position_started_at = None
+
+
+    radar_active = True
+
+
+    await send_message(
+
+        "🟢 **انتهت جلسة Guardian.**\n\n"
+
+        f"العقد السابق:\n"
+        f"`{short_address(old_mint)}`\n\n"
+
+        "▶️ عاد الرادار لإرسال "
+        "الاكتشافات الجديدة فقط."
+
+    )
+
+
+# ============================================================
+# GUARDIAN ENGINE
+# ============================================================
+
+async def guardian_loop():
+
+    previous = None
+
+    last_alert_time = 0.0
+
+
+    while True:
+
+        try:
+
+            if (
+                not position_active
+                or not position_mint
+            ):
+
+                previous = None
+
+                await asyncio.sleep(
+                    GUARDIAN_INTERVAL
+                )
+
+                continue
+
+
+            snapshot = await fetch_market_data(
+                position_mint
+            )
+
+
+            if not snapshot:
+
+                await asyncio.sleep(
+                    GUARDIAN_INTERVAL
+                )
+
+                continue
+
+
+            candidate = analyze_snapshot(
+                snapshot
+            )
+
+
+            if candidate:
+
+                old_candidate = candidates.get(
+                    position_mint
+                )
+
+
+                if old_candidate:
+
+                    candidate.first_seen = (
+                        old_candidate.first_seen
+                    )
+
+                    candidate.updates = (
+                        old_candidate.updates + 1
+                    )
+
+
+                candidates[
+                    position_mint
+                ] = candidate
+
+
+            change = 0.0
+
+
+            if (
+                position_entry_price
+                and position_entry_price > 0
+            ):
+
+                change = (
+
+                    (
+                        snapshot.price
+                        - position_entry_price
+                    )
+
+                    / position_entry_price
+
+                    * 100
+
+                )
+
+
+            danger = False
+
+            danger_reasons = []
+
+
+            # ------------------------------------------------
+            # LIQUIDITY COLLAPSE
+            # ------------------------------------------------
+
+            if (
+                snapshot.liquidity
+                < MIN_LIQUIDITY * 0.60
+            ):
+
+                danger = True
+
+                danger_reasons.append(
+                    "انخفاض حاد في السيولة"
+                )
+
+
+            # ------------------------------------------------
+            # FAST PRICE COLLAPSE
+            # ------------------------------------------------
+
+            if (
+                snapshot.price_change_5m
+                <= -15
+            ):
+
+                danger = True
+
+                danger_reasons.append(
+                    "هبوط سريع في 5 دقائق"
+                )
+
+
+            # ------------------------------------------------
+            # SELL DOMINANCE
+            # ------------------------------------------------
+
+            if (
+
+                snapshot.sells_5m
+                > snapshot.buys_5m * 2
+
+                and
+
+                snapshot.sells_5m >= 10
+
+            ):
+
+                danger = True
+
+                danger_reasons.append(
+                    "تفوق بيع قوي"
+                )
+
+
+            if danger:
+
+                daily_stats[
+                    "danger"
+                ] += 1
+
+
+                daily_stats[
+                    "guardian_alerts"
+                ] += 1
+
+
+                now = time.time()
+
+
+                if (
+                    now
+                    - last_alert_time
+                    >= 20
+                ):
+
+                    await send_message(
+
+                        "🚨 **GUARDIAN ALERT**\n\n"
+
+                        f"🔑 `{position_mint}`\n"
+
+                        f"💰 السعر: "
+                        f"`{money(snapshot.price)}`\n"
+
+                        f"📉 من بداية الجلسة: "
+                        f"`{pct(change)}`\n"
+
+                        f"💧 السيولة: "
+                        f"`{money(snapshot.liquidity)}`\n\n"
+
+                        + "\n".join(
+
+                            f"• {reason}"
+
+                            for reason
+                            in danger_reasons
+
+                        )
+
+                    )
+
+
+                    last_alert_time = now
+
+
+            # ------------------------------------------------
+            # ESTIMATED FLOW
+            # ------------------------------------------------
+
+            if (
+
+                previous
+
+                and
+
+                previous.liquidity > 0
+
+                and
+
+                snapshot.liquidity
+                < previous.liquidity * 0.80
+
+            ):
+
+                record_flow(
+
+                    position_mint,
+
+                    "out",
+
+                    max(
+
+                        0,
+
+                        previous.liquidity
+                        - snapshot.liquidity
+
+                    ),
+
+                    "guardian",
+
+                    "انخفاض تقديري في السيولة"
+
+                )
+
+
+            if (
+
+                previous
+
+                and
+
+                snapshot.liquidity
+                > previous.liquidity * 1.15
+
+            ):
+
+                record_flow(
+
+                    position_mint,
+
+                    "in",
+
+                    (
+                        snapshot.liquidity
+                        - previous.liquidity
+                    ),
+
+                    "guardian",
+
+                    "ارتفاع تقديري في السيولة"
+
+                )
+
+
+            previous = snapshot
+
+
+            # ------------------------------------------------
+            # DASHBOARD
+            # ------------------------------------------------
+
+            if position_started_at:
+
+                elapsed_seconds = int(
+
+                    time.time()
+                    - position_started_at
+
+                )
+
+            else:
+
+                elapsed_seconds = 0
+
+
+            elapsed = (
+
+                f"{elapsed_seconds // 60}m "
+                f"{elapsed_seconds % 60}s"
+
+            )
+
+
+            status = (
+                "🟢 مستقر/إيجابي"
+            )
+
+
+            if danger:
+
+                status = "🔴 خطر"
+
+            elif (
+
+                candidate
+
+                and
+
+                candidate.status
+                == "DIAMOND"
+
+            ):
+
+                status = "💎 Diamond"
+
+
+            dashboard_guardian_cache.update(
+
+                {
+
+                    "mint":
+                        position_mint,
+
+                    "price":
+                        snapshot.price,
+
+                    "liquidity":
+                        snapshot.liquidity,
+
+                    "change":
+                        change,
+
+                    "buys_5m":
+                        snapshot.buys_5m,
+
+                    "sells_5m":
+                        snapshot.sells_5m,
+
+                    "status":
+                        status,
+
+                    "elapsed":
+                        elapsed,
+
+                    "updated":
+                        time.time(),
+
+                }
+
+            )
+
+
+            await asyncio.sleep(
+                GUARDIAN_INTERVAL
+            )
+
+
+        except asyncio.CancelledError:
+
+            raise
+
+
+        except Exception as exc:
+
+            logger.warning(
+                "Guardian error: %s",
+                exc
+            )
+
+
+            await asyncio.sleep(
+                GUARDIAN_INTERVAL
+            )
+
+
+# ============================================================
+# DAILY INTELLIGENCE REPORT
+# ============================================================
+
+def build_daily_report():
+
+    reset_daily_stats_if_needed()
+
+
+    peak_event_hour = max(
+
+        range(24),
+
+        key=lambda hour:
+            hourly_stats[
+                hour
+            ][
+                "events"
+            ]
+
+    )
+
+
+    peak_flow_hour = max(
+
+        range(24),
+
+        key=lambda hour:
+
+            (
+
+                hourly_stats[
+                    hour
+                ][
+                    "flow_in"
+                ]
+
+                +
+
+                hourly_stats[
+                    hour
+                ][
+                    "flow_out"
+                ]
+
+            )
+
+    )
+
+
+    peak_buy_hour = max(
+
+        range(24),
+
+        key=lambda hour:
+
+            hourly_stats[
+                hour
+            ][
+                "flow_in"
+            ]
+
+    )
+
+
+    peak_sell_hour = max(
+
+        range(24),
+
+        key=lambda hour:
+
+            hourly_stats[
+                hour
+            ][
+                "flow_out"
+            ]
+
+    )
+
+
+    best = best_candidate()
+
+
+    rows = []
+
+
+    rows.append(
+
+        "📊 **SOLANA RADAR — التقرير اليومي**"
+
+    )
+
+
+    rows.append(
+
+        f"🕐 التوقيت المحلي: `{LOCAL_TIMEZONE}`"
+
+    )
+
+
+    rows.append(
+
+        f"🔭 اكتشافات جديدة: "
+        f"`{daily_stats['new_mints']}`"
+
+    )
+
+
+    rows.append(
+
+        f"🥇 Gold: `{daily_stats['gold']}` "
+        f"| 💎 Diamond: "
+        f"`{daily_stats['diamond']}`"
+
+    )
+
+
+    rows.append(
+
+        f"⏰ أعلى نشاط: "
+        f"`{peak_event_hour:02d}:00`"
+        f"–"
+        f"`{(peak_event_hour + 1) % 24:02d}:00`"
+
+    )
+
+
+    rows.append(
+
+        f"💰 أقوى تدفق إجمالي: "
+        f"`{peak_flow_hour:02d}:00`"
+        f"–"
+        f"`{(peak_flow_hour + 1) % 24:02d}:00`"
+
+    )
+
+
+    rows.append(
+
+        f"🟢 أقوى دخول تقديري: "
+        f"`{peak_buy_hour:02d}:00`"
+        f"–"
+        f"`{(peak_buy_hour + 1) % 24:02d}:00`"
+
+    )
+
+
+    rows.append(
+
+        f"🔴 أقوى خروج تقديري: "
+        f"`{peak_sell_hour:02d}:00`"
+        f"–"
+        f"`{(peak_sell_hour + 1) % 24:02d}:00`"
+
+    )
+
+
+    rows.append(
+
+        f"🚨 Guardian Alerts: "
+        f"`{daily_stats['guardian_alerts']}`"
+
+    )
+
+
+    if best:
+
+        rows.append(
+
+            f"🏆 أفضل مرشح: "
+            f"`{best.snapshot.symbol}` "
+            f"— `{best.status}` "
+            f"— Final `{best.final_score}/100`"
+
+        )
+
+    else:
+
+        rows.append(
+            "🏆 لم يوجد مرشح مؤهل محفوظ."
+        )
+
+
+    rows.append(
+
+        f"🕐 آخر تحديث: "
+        f"`{local_time_text()}`"
+
+    )
+
+
+    return "\n".join(
+        rows
+    )
+
+
+async def daily_report_loop():
+
+    global last_daily_report
+
+
+    while True:
+
+        try:
+
+            reset_daily_stats_if_needed()
+
+
+            now = local_now()
+
+
+            target = now.replace(
+
+                hour=23,
+
+                minute=59,
+
+                second=50,
+
+                microsecond=0
+
+            )
+
+
+            if (
+
+                now >= target
+
+                and
+
+                last_daily_report
+                != daily_stats["date"]
+
+            ):
+
+                report = (
+                    build_daily_report()
+                )
+
+
+                await send_message(
+                    report
+                )
+
+
+                last_daily_report = (
+                    daily_stats["date"]
+                )
+
+
+        except asyncio.CancelledError:
+
+            raise
+
+
+        except Exception as exc:
+
+            logger.warning(
+                "Daily report error: %s",
+                exc
+            )
+
+
+        await asyncio.sleep(
+            20
+        )
+
+
+# ============================================================
+# WATCHDOG
+# ============================================================
+
+async def watchdog_loop():
+
+    global last_heartbeat
+
+
+    while True:
+
+        try:
+
+            now = time.time()
+
+
+            if (
+
+                last_heartbeat
+
+                and
+
+                now - last_heartbeat > 90
+
+            ):
+
+                logger.warning(
+
+                    "Watchdog: "
+                    "Solana WebSocket heartbeat "
+                    "is stale."
+
+                )
+
+
+            logger.info(
+
+                "ENGINE ALIVE | "
+                "radar=%s | "
+                "guardian=%s | "
+                "candidates=%d | "
+                "seen=%d | "
+                "local=%s",
+
+                radar_active,
+
+                position_active,
+
+                len(candidates),
+
+                len(seen_mints),
+
+                local_time_text()
+
+            )
+
+
+        except asyncio.CancelledError:
+
+            raise
+
+
+        except Exception as exc:
+
+            logger.warning(
+                "Watchdog error: %s",
+                exc
+            )
+
+
+        await asyncio.sleep(
+            30
+        )
+
+
+# ============================================================
+# TELEGRAM CALLBACKS
+# ============================================================
+
+@bot.callback_query_handler(
+    func=lambda call: True
+)
+def telegram_callback(
+    call
+):
+
+    try:
+
+        data = call.data or ""
+
+
+        # ----------------------------------------------------
+        # COPY
+        # ----------------------------------------------------
+
+        if data.startswith(
+            "copy:"
+        ):
+
+            mint = data.split(
+                ":",
+                1
+            )[1]
+
+
+            bot.answer_callback_query(
+
+                call.id,
+
+                "العقد ظاهر في الرسالة. "
+                "اضغط مطولًا لنسخه.",
+
+                show_alert=False
+
+            )
+
+
+            return
+
+
+        # ----------------------------------------------------
+        # DETAILS
+        # ----------------------------------------------------
+
+        if data.startswith(
+            "details:"
+        ):
+
+            mint = data.split(
+                ":",
+                1
+            )[1]
+
+
+            candidate = candidates.get(
+                mint
+            )
+
+
+            if not candidate:
+
+                bot.answer_callback_query(
+
+                    call.id,
+
+                    "لا توجد بيانات حديثة.",
+
+                    show_alert=True
+
+                )
+
+                return
+
+
+            token = (
+                candidate.snapshot
+            )
+
+
+            mint_auth = (
+
+                "غير مؤكدة"
+
+                if token.mint_authority
+                == "__UNKNOWN__"
+
+                else (
+
+                    "موجودة"
+
+                    if token.mint_authority
+
+                    else
+
+                    "غير موجودة"
+
+                )
+
+            )
+
+
+            freeze_auth = (
+
+                "غير مؤكدة"
+
+                if token.freeze_authority
+                == "__UNKNOWN__"
+
+                else (
+
+                    "موجودة"
+
+                    if token.freeze_authority
+
+                    else
+
+                    "غير موجودة"
+
+                )
+
+            )
+
+
+            text = (
+
+                "🔎 **تفاصيل المرشح**\n\n"
+
+                f"الرمز: `{token.symbol}`\n"
+
+                f"العقد: `{token.mint}`\n"
+
+                f"Security: "
+                f"`{candidate.security_score}`\n"
+
+                f"Market: "
+                f"`{candidate.market_score}`\n"
+
+                f"Behavior: "
+                f"`{candidate.behavior_score}`\n"
+
+                f"Whale: "
+                f"`{candidate.whale_score}`\n"
+
+                f"Final: "
+                f"`{candidate.final_score}`\n"
+
+                f"Diamond: "
+                f"`{candidate.diamond_score}`\n"
+
+                f"Source: "
+                f"`{token.source}`\n"
+
+                f"DEX: "
+                f"`{token.dex_id}`\n"
+
+                f"Mint Authority: "
+                f"`{mint_auth}`\n"
+
+                f"Freeze Authority: "
+                f"`{freeze_auth}`"
+
+            )
+
+
+            bot.send_message(
+
+                CHAT_ID,
+
+                text,
+
+                disable_web_page_preview=True
+
+            )
+
+
+            bot.answer_callback_query(
+                call.id
+            )
+
+
+            return
+
+
+        # ----------------------------------------------------
+        # BUY / GUARDIAN
+        # ----------------------------------------------------
+
+        if data.startswith(
+            "buy:"
+        ):
+
+            mint = data.split(
+                ":",
+                1
+            )[1]
+
+
+            bot.answer_callback_query(
+
+                call.id,
+
+                "تم تفعيل Guardian.",
+
+                show_alert=False
+
+            )
+
+
+            if event_loop:
+
+                asyncio.run_coroutine_threadsafe(
+
+                    start_position(
+                        mint
+                    ),
+
+                    event_loop
+
+                )
+
+
+            return
+
+
+        # ----------------------------------------------------
+        # FINISH
+        # ----------------------------------------------------
+
+        if data == "finish_position":
+
+            bot.answer_callback_query(
+
+                call.id,
+
+                "تم إنهاء الجلسة.",
+
+                show_alert=False
+
+            )
+
+
+            if event_loop:
+
+                asyncio.run_coroutine_threadsafe(
+
+                    finish_position(),
+
+                    event_loop
+
+                )
+
+
+            return
+
+
+        bot.answer_callback_query(
+            call.id
+        )
+
+
+    except Exception as exc:
+
+        logger.warning(
+
+            "Telegram callback error: %s",
+
+            exc
+
+        )
+
+
+# ============================================================
+# TELEGRAM POLLING THREAD
+# ============================================================
+
+def telegram_polling_thread():
+
+    while True:
+
+        try:
+
+            logger.info(
+                "Telegram polling started"
+            )
+
+
+            bot.infinity_polling(
+
+                timeout=30,
+
+                long_polling_timeout=30,
+
+                skip_pending=True
+
+            )
+
+
+        except Exception as exc:
+
+            logger.warning(
+
+                "Telegram polling stopped: %s",
+
+                exc
+
+            )
+
+
+            time.sleep(
+                5
+            )
+
+
+# ============================================================
+# DASHBOARD
+# ============================================================
+
+DASHBOARD_HTML = r"""
+<!doctype html>
+
+<html lang="ar" dir="rtl">
+
+<head>
+
+<meta charset="utf-8">
+
+<meta
+name="viewport"
+content="width=device-width,initial-scale=1"
+>
+
+<title>SOLANA RADAR V2</title>
+
+<style>
+
+body{
+
+font-family:Arial,sans-serif;
+
+margin:0;
+
+padding:20px;
+
+background:#111;
+
+color:#eee;
+
+}
+
+.card{
+
+background:#1d1d1d;
+
+border-radius:12px;
+
+padding:16px;
+
+margin-bottom:12px;
+
+}
+
+.grid{
+
+display:grid;
+
+grid-template-columns:
+repeat(
+auto-fit,
+minmax(
+180px,
+1fr
+)
+);
+
+gap:12px;
+
+}
+
+.big{
+
+font-size:28px;
+
+font-weight:bold;
+
+}
+
+.good{
+
+color:#6ee7b7;
+
+}
+
+.warn{
+
+color:#fbbf24;
+
+}
+
+.bad{
+
+color:#fb7185;
+
+}
+
+.muted{
+
+color:#aaa;
+
+}
+
+table{
+
+width:100%;
+
+border-collapse:collapse;
+
+}
+
+td,th{
+
+padding:8px;
+
+border-bottom:
+1px solid #333;
+
+text-align:right;
+
+}
+
+code{
+
+word-break:break-all;
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>
+🛰️ SOLANA RADAR V2
+</h1>
+
+<div class="grid">
+
+<div class="card">
+
+<div class="muted">
+المحرك
+</div>
+
+<div
+id="engine"
+class="big"
+>
+...
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="muted">
+Guardian
+</div>
+
+<div
+id="guardian"
+class="big"
+>
+...
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="muted">
+Candidates
+</div>
+
+<div
+id="candidates"
+class="big"
+>
+0
+</div>
+
+</div>
+
+
+<div class="card">
+
+<div class="muted">
+Seen Mints
+</div>
+
+<div
+id="seen"
+class="big"
+>
+0
+</div>
+
+</div>
+
+</div>
+
+
+<div class="card">
+
+<h2>
+🛡️ Guardian Live
+</h2>
+
+<div id="guardian_box">
+لا توجد جلسة
+</div>
+
+</div>
+
+
+<div class="card">
+
+<h2>
+🏆 أفضل مرشح
+</h2>
+
+<div id="best">
+لا يوجد
+</div>
+
+</div>
+
+
+<div class="card">
+
+<h2>
+⏱️ آخر تحديث
+</h2>
+
+<div id="time">
+...
+</div>
+
+</div>
+
+
+<script>
+
+async function refresh(){
+
+try{
+
+const r =
+await fetch(
+'/api/state'
+);
+
+const d =
+await r.json();
+
+
+document.getElementById(
+'engine'
+).textContent =
+
+d.radar_active
+? 'RUNNING'
+: 'FOCUS';
+
+
+document.getElementById(
+'guardian'
+).textContent =
+
+d.position_active
+? 'ACTIVE'
+: 'IDLE';
+
+
+document.getElementById(
+'candidates'
+).textContent =
+d.candidates;
+
+
+document.getElementById(
+'seen'
+).textContent =
+d.seen_mints;
+
+
+document.getElementById(
+'time'
+).textContent =
+d.local_time;
+
+
+const g =
+d.guardian;
+
+
+if(
+g &&
+g.mint
+){
+
+document.getElementById(
+'guardian_box'
+).innerHTML =
+
+'<b>'
++ g.status
++ '</b><br>'
+
++
+
+'Contract: <code>'
++ g.mint
++ '</code><br>'
+
++
+
+'Price: '
++ g.price
++ '<br>'
+
++
+
+'Liquidity: '
++ g.liquidity
++ '<br>'
+
++
+
+'Session change: '
++ g.change
++ '<br>'
+
++
+
+'Buy 5m: '
++ g.buys_5m
++ ' | Sell 5m: '
++ g.sells_5m
+
++
+
+'<br>Elapsed: '
++ g.elapsed;
+
+}
+
+else{
+
+document.getElementById(
+'guardian_box'
+).textContent =
+'لا توجد جلسة';
+
+}
+
+
+const b =
+d.best;
+
+
+if(b){
+
+document.getElementById(
+'best'
+).innerHTML =
+
+'<b>'
++ b.status
++ ' — '
++ b.symbol
++ '</b><br>'
+
++
+
+'Contract: <code>'
++ b.mint
++ '</code><br>'
+
++
+
+'Final: '
++ b.final_score
+
++
+
+' | Diamond: '
++ b.diamond_score
+
++
+
+' | Security: '
++ b.security_score
+
++
+
+'<br>Liquidity: '
++ b.liquidity
+
++
+
+' | Volume 5m: '
++ b.volume_5m;
+
+}
+
+else{
+
+document.getElementById(
+'best'
+).textContent =
+'لا يوجد';
+
+}
+
+
+}
+
+catch(e){
+
+document.getElementById(
+'engine'
+).textContent =
+'ERROR';
+
+}
+
+}
+
+
+setInterval(
+refresh,
+2000
+);
+
+refresh();
+
+</script>
+
+</body>
+
+</html>
+"""
+
+
+async def dashboard_index(
+    request
+):
+
+    return web.Response(
+
+        text=DASHBOARD_HTML,
+
+        content_type="text/html"
+
+    )
+
+
+async def dashboard_state(
+    request
+):
+
+    best = best_candidate()
+
+
+    payload = {
+
+        "app":
+            APP_NAME,
+
+        "version":
+            VERSION,
+
+        "radar_active":
+            radar_active,
+
+        "position_active":
+            position_active,
+
+        "candidates":
+            len(candidates),
+
+        "seen_mints":
+            len(seen_mints),
+
+        "local_time":
+            local_time_text(),
+
+        "timezone":
+            LOCAL_TIMEZONE,
+
+        "guardian": {
+
+            **dashboard_guardian_cache,
+
+            "price":
+                money(
+                    dashboard_guardian_cache[
+                        "price"
+                    ]
+                ),
+
+            "liquidity":
+                money(
+                    dashboard_guardian_cache[
+                        "liquidity"
+                    ]
+                ),
+
+            "change":
+                pct(
+                    dashboard_guardian_cache[
+                        "change"
+                    ]
+                ),
+
+        },
+
+        "best":
+            None,
+
+    }
+
+
+    if best:
+
+        payload[
+            "best"
+        ] = {
+
+            "status":
+                best.status,
+
+            "symbol":
+                best.snapshot.symbol,
+
+            "mint":
+                best.snapshot.mint,
+
+            "final_score":
+                best.final_score,
+
+            "diamond_score":
+                best.diamond_score,
+
+            "security_score":
+                best.security_score,
+
+            "liquidity":
+                money(
+                    best.snapshot.liquidity
+                ),
+
+            "volume_5m":
+                money(
+                    best.snapshot.volume_5m
+                ),
+
+        }
+
+
+    return web.json_response(
+        payload
+    )
+
+
+async def start_dashboard():
+
+    global dashboard_runner
+
+
+    app = web.Application()
+
+
+    app.router.add_get(
+        "/",
+        dashboard_index
+    )
+
+
+    app.router.add_get(
+        "/api/state",
+        dashboard_state
+    )
+
+
+    dashboard_runner = (
+        web.AppRunner(
+            app
+        )
+    )
+
+
+    await dashboard_runner.setup()
+
+
+    site = web.TCPSite(
+
+        dashboard_runner,
+
+        DASHBOARD_HOST,
+
+        DASHBOARD_PORT
+
+    )
+
+
+    await site.start()
+
+
+    logger.info(
+
+        "Dashboard listening on "
+        "http://%s:%s",
+
+        DASHBOARD_HOST,
+
+        DASHBOARD_PORT
+
+    )
+
+
+# ============================================================
+# STARTUP MESSAGE
+# ============================================================
+
+async def startup_message():
+
+    pump_status = (
+
+        "ON"
+
+        if PUMPPORTAL_API_KEY
+
+        else
+
+        "OFF - API key not configured"
+
+    )
+
+
+    await send_message(
+
+        "🛰️ **SOLANA RADAR V2 بدأ التشغيل**\n\n"
+
+        f"⚙️ Version: `{VERSION}`\n"
+
+        f"🌍 Local timezone: "
+        f"`{LOCAL_TIMEZONE}`\n"
+
+        f"💧 Min liquidity: "
+        f"`{money(MIN_LIQUIDITY)}`\n"
+
+        f"🏆 Gold threshold: "
+        f"`{MIN_GOLD_SCORE}`\n"
+
+        f"💎 Diamond threshold: "
+        f"`{MIN_DIAMOND_SCORE}`\n\n"
+
+        f"🚀 PumpPortal: `{pump_status}`\n"
+
+        "🔭 Solana/Raydium discovery: ON\n"
+
+        "🧩 Launchpad adapters: READY\n"
+
+        "🧠 Security + Market + Behavior + Whale: ON\n"
+
+        "🛡️ Guardian: MANUAL ACTIVATION\n"
+
+        "🤖 Auto trading: DISABLED\n\n"
+
+        "♻️ المحرك المستمر يعمل الآن."
+
+    )
+
+
+# ============================================================
+# MAIN ENGINE
+# ============================================================
+
+async def main():
+
+    global event_loop
+
+
+    event_loop = (
+        asyncio.get_running_loop()
+    )
+
+
+    reset_daily_stats_if_needed()
+
+
+    register_sources()
+
+
+    await start_dashboard()
+
+
+    await startup_message()
+
+
+    tasks = [
+
+        asyncio.create_task(
+
+            solana_log_stream(),
+
+            name="solana_log_stream"
+
+        ),
+
+        asyncio.create_task(
+
+            pumpportal_stream(),
+
+            name="pumpportal_stream"
+
+        ),
+
+        asyncio.create_task(
+
+            configured_source_loop(),
+
+            name="configured_source_loop"
+
+        ),
+
+        asyncio.create_task(
+
+            market_refresh_loop(),
+
+            name="market_refresh_loop"
+
+        ),
+
+        asyncio.create_task(
+
+            guardian_loop(),
+
+            name="guardian_loop"
+
+        ),
+
+        asyncio.create_task(
+
+            daily_report_loop(),
+
+            name="daily_report_loop"
+
+        ),
+
+        asyncio.create_task(
+
+            watchdog_loop(),
+
+            name="watchdog_loop"
+
+        ),
+
+    ]
+
+
+    try:
+
+        await asyncio.gather(
+            *tasks
+        )
+
+
+    finally:
+
+        for task in tasks:
+
+            task.cancel()
+
+
+        await asyncio.gather(
+
+            *tasks,
+
+            return_exceptions=True
+
+        )
+
+
+        if dashboard_runner:
+
+            await dashboard_runner.cleanup()
+
+
+        if (
+            http_session
+            and
+            not http_session.closed
+        ):
+
+            await http_session.close()
+
+
+# ============================================================
+# RUN
+# ============================================================
+
+if __name__ == "__main__":
+
+    logger.info(
+
+        "%s %s starting...",
+
+        APP_NAME,
+
+        VERSION
+
+    )
+
+
+    threading.Thread(
+
+        target=
+            telegram_polling_thread,
+
+        daemon=True,
+
+        name=
+            "telegram-polling"
+
+    ).start()
+
+
+    try:
+
+        asyncio.run(
+            main()
+        )
+
+
+    except KeyboardInterrupt:
+
+        logger.info(
+            "Stopped by user."
+        )
+
+
+    except Exception as exc:
+
+        logger.exception(
+            "Fatal engine error: %s",
+            exc
+        )
+
+        raise
